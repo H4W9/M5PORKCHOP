@@ -166,6 +166,16 @@ struct Keyboard_Class {
     KeysState keysState()         { return PancakeKB::keysState(); }
 };
 
+// ---- RTC stub (no hardware RTC on Pancake DevKit) ----------
+// Returns zeroed structs so year < 2024 check fails everywhere,
+// causing callers to fall through to their existing time() fallback.
+struct PancakeRtcDate { uint16_t year = 0; uint8_t month = 0, date = 0; };
+struct PancakeRtcTime { uint8_t hours = 0, minutes = 0, seconds = 0; };
+struct PancakeRtcDateTime { PancakeRtcDate date; PancakeRtcTime time; };
+struct PancakeRtc_Class {
+    PancakeRtcDateTime getDateTime() { return {}; }
+};
+
 // ---- Power — MAX17048 fuel gauge (I2C 0x36) ----------------
 // Pancake hardware has a MAX17048 on the same I2C bus as the touch
 // controller (SDA=PANCAKE_TOUCH_SDA, SCL=PANCAKE_TOUCH_SCL).
@@ -283,10 +293,11 @@ struct M5Cardputer_Class {
 
 // ---- M5Unified_Class ---------------------------------------
 struct M5Unified_Class {
-    M5GFX          Display;
-    M5Power_Class  Power;
-    Speaker_Class  Speaker;
-    M5Imu_Class    Imu;
+    M5GFX              Display;
+    M5Power_Class      Power;
+    Speaker_Class      Speaker;
+    M5Imu_Class        Imu;
+    PancakeRtc_Class   Rtc;
 
     void update() {}
     m5::board_t getBoard() { return m5::board_t::board_Unknown; }
