@@ -16,10 +16,7 @@
 #include <string>
 #include "../pancake_config.h"
 
-#ifndef LGFX_FONT_T_DEFINED
-#define LGFX_FONT_T_DEFINED
 struct lgfxFont_t {};
-#endif
 
 // Only define stub types if the real impl hasn't been loaded yet.
 // pancake_hal_impl.h sets PANCAKE_HAL_IMPL_LOADED before defining
