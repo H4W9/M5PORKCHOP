@@ -1,6 +1,7 @@
 name: Build
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, develop, personality_disorder_innit ]
   pull_request:
