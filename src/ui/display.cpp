@@ -291,18 +291,9 @@ void Display::update() {
     updateDimming();
     
     // SD Format mode hides bars to save RAM for disk operations
+    PorkchopMode mode = porkchop.getMode();
     bool barsHidden = SdFormatMenu::areBarsHidden() || ChargingMode::areBarsHidden()
                    || (mode == PorkchopMode::BOOT_OTA1);
-    
-    if (!barsHidden) {
-        drawTopBar();
-    } else {
-        // Clear bar sprites when hidden to prevent stale content on push
-        topBar.fillSprite(COLOR_BG);
-        bottomBar.fillSprite(COLOR_BG);
-    }
-
-    PorkchopMode mode = porkchop.getMode();
     bool useAvatarWeather = (mode == PorkchopMode::IDLE ||
         mode == PorkchopMode::OINK_MODE ||
         mode == PorkchopMode::DNH_MODE ||
