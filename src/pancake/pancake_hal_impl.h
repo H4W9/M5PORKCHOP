@@ -6,8 +6,7 @@
 //  Included only by display.h (which every porkchop .cpp includes).
 //  NOT force-included — only fires after TFT_eSPI is available.
 //
-//  Defines PANCAKE_HAL_IMPL_LOADED so the M5Unified.h stub knows
-//  to skip its lightweight placeholder definitions.
+//  Single source of truth for all HAL types — included by stubs and display.h.
 // =============================================================
 
 #ifndef PANCAKE_HAL_IMPL_H
@@ -15,9 +14,6 @@
 
 #ifdef PORKCHOP_PANCAKE
 
-// Must be defined BEFORE including M5Unified.h stub (which happens
-// transitively). Tells the stub to skip its placeholder types.
-#define PANCAKE_HAL_IMPL_LOADED
 
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
