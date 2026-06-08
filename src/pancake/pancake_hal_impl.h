@@ -3,18 +3,21 @@
 //  pancake_hal_impl.h  —  Full HAL implementation
 //  PORKCHOP PANCAKE (ESP32-C5-DevKitC-1 + ST7796 + FT6336)
 //
-//  This header contains all the type definitions, shim classes,
-//  and extern declarations for the Pancake hardware layer.
+//  Included only by display.h (which every porkchop .cpp includes).
+//  NOT force-included — only fires after TFT_eSPI is available.
 //
-//  INCLUDED BY: display.h (which is included by every porkchop
-//  source file). NOT force-included — only porkchop's own
-//  source files get this, after TFT_eSPI is available.
+//  Defines PANCAKE_HAL_IMPL_LOADED so the M5Unified.h stub knows
+//  to skip its lightweight placeholder definitions.
 // =============================================================
 
 #ifndef PANCAKE_HAL_IMPL_H
 #define PANCAKE_HAL_IMPL_H
 
 #ifdef PORKCHOP_PANCAKE
+
+// Must be defined BEFORE including M5Unified.h stub (which happens
+// transitively). Tells the stub to skip its placeholder types.
+#define PANCAKE_HAL_IMPL_LOADED
 
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
