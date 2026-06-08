@@ -90,13 +90,18 @@ static void setupHeapLayout() {
 
 void setup() {
     Serial.begin(115200);
-    delay(100);
-    Serial.println("\n=== PORKCHOP STARTING ===");
+    delay(500);  // Wait for USB CDC to enumerate
+    Serial.println("\n\n[BOOT] setup() entry - firmware alive");
+    Serial.flush();
 
     // Init hardware
 #ifdef PORKCHOP_PANCAKE
     // Pancake: M5Cardputer.begin() initialises TFT, touch, keyboard, and SD.
+    Serial.println("[BOOT] Calling M5Cardputer.begin()...");
+    Serial.flush();
     M5Cardputer.begin();
+    Serial.println("[BOOT] M5Cardputer.begin() done");
+    Serial.flush();
 #else
     // Deassert CapLoRa SX1262 CS BEFORE SD init. The SX1262 shares
     // MOSI(G14)/MISO(G39)/SCK(G40) with the SD card. If its CS floats low

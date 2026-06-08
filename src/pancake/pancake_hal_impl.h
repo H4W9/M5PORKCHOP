@@ -261,16 +261,26 @@ struct M5Cardputer_Class {
 
     template<typename... Args>
     void begin(Args&&...) {
+        Serial.println("[HAL] begin() entry");
+        Serial.flush();
+
         // Keep backlight OFF until display is initialized to prevent flicker
         pinMode(PANCAKE_TFT_BL, OUTPUT);
         analogWrite(PANCAKE_TFT_BL, 0);
 
+        Serial.println("[HAL] Calling pancakeTFT.init()...");
+        Serial.flush();
         pancakeTFT.init();
+        Serial.println("[HAL] pancakeTFT.init() done");
+        Serial.flush();
+
         pancakeTFT.setRotation(PANCAKE_ROTATION);
         pancakeTFT.fillScreen(TFT_BLACK);
 
         // Now turn on backlight — display is ready
         analogWrite(PANCAKE_TFT_BL, 255);
+        Serial.println("[HAL] TFT init complete, BL on");
+        Serial.flush();
 
         if (!pancakeTouch.begin()) {
             Serial.println("[PANCAKE] FT6336 not found");
