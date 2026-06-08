@@ -10,6 +10,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - env: m5cardputer
+            artifact: firmware-cardputer
+            bin: .pio/build/m5cardputer/firmware.bin
+          - env: pancake
+            artifact: firmware-pancake
+            bin: .pio/build/pancake/firmware.bin
 
     steps:
       - name: Checkout repository
@@ -25,13 +34,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install platformio
 
-      - name: Build firmware
+      - name: Build firmware (${{ matrix.env }})
         run: |
-          pio run -e m5cardputer
+          pio run -e ${{ matrix.env }}
 
-      - name: Upload firmware artifact
+      - name: Upload firmware artifact (${{ matrix.env }})
         uses: actions/upload-artifact@v4
         with:
-          name: firmware
-          path: .pio/build/m5cardputer/firmware.bin
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.bin }}
           retention-days: 30

@@ -2,8 +2,10 @@
 // Main entry point
 // by 0ct0
 
+#ifndef PORKCHOP_PANCAKE
 #include <M5Cardputer.h>
 #include <M5Unified.h>
+#endif
 #include <SD.h>
 #include <WiFi.h>              // <-- PATCH: init WiFi early (before heap fragmentation)
 #include <esp_heap_caps.h>     // For heap conditioning
@@ -91,6 +93,11 @@ void setup() {
     delay(100);
     Serial.println("\n=== PORKCHOP STARTING ===");
 
+    // Init hardware
+#ifdef PORKCHOP_PANCAKE
+    // Pancake: M5Cardputer.begin() initialises TFT, touch, keyboard, and SD.
+    M5Cardputer.begin();
+#else
     // Deassert CapLoRa SX1262 CS BEFORE SD init. The SX1262 shares
     // MOSI(G14)/MISO(G39)/SCK(G40) with the SD card. If its CS floats low
     // the SX1262 responds on the bus and SD.begin() fails with f_mount(3).
@@ -105,6 +112,7 @@ void setup() {
 
     // Configure G0 button (GPIO0) as input with pullup
     pinMode(0, INPUT_PULLUP);
+#endif
 
     // Reservation fence: push WiFi driver allocations high in heap, then free
     // the fence to leave large contiguous space at the bottom.
@@ -134,7 +142,11 @@ void setup() {
     Display::showBootSplash();
 
     // Apply saved brightness
+#ifdef PORKCHOP_PANCAKE
+    analogWrite(PANCAKE_TFT_BL, Config::personality().brightness * 255 / 100);
+#else
     M5.Display.setBrightness(Config::personality().brightness * 255 / 100);
+#endif
 
     // Initialize piglet personality
     Avatar::init();

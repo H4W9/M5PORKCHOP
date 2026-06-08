@@ -1,17 +1,34 @@
-// Display management for M5Cardputer
+// Display management for M5Cardputer / Pancake
 #pragma once
 
+// PANCAKE: pancake_hal.h is force-included before this via -include,
+// so M5Unified.h is already shimmed.  On original Cardputer builds
+// the real header is used.
+#ifndef PORKCHOP_PANCAKE
 #include <M5Unified.h>
+#endif
 
 // Forward declarations
 enum class PorkchopMode : uint8_t;
 
-// Display layout constants (240x135 screen)
+// Display layout constants
+#ifdef PORKCHOP_PANCAKE
+// Pancake: portrait 320x480 — porkchop occupies the top 240 px pane.
+// The bottom 240 px is the touch keyboard (managed by pancake_hal).
+#include "../pancake/pancake_config.h"
+#define DISPLAY_W  PANCAKE_SCREEN_W     // 320
+#define DISPLAY_H  PANCAKE_PORK_H       // 240 (porkchop pane only)
+#define TOP_BAR_H  14
+#define BOTTOM_BAR_H 14
+#define MAIN_H     (DISPLAY_H - TOP_BAR_H - BOTTOM_BAR_H)  // 212
+#else
+// Original Cardputer: 240x135
 #define DISPLAY_W 240
 #define DISPLAY_H 135
 #define TOP_BAR_H 14
 #define BOTTOM_BAR_H 14
 #define MAIN_H (DISPLAY_H - TOP_BAR_H - BOTTOM_BAR_H)
+#endif
 
 // Theme structure
 struct PorkTheme {
@@ -163,6 +180,7 @@ private:
     static void drawSettingsScreen(M5Canvas& canvas);
     static void drawAboutScreen(M5Canvas& canvas);
     static void drawFileTransferScreen(M5Canvas& canvas);
+    static void drawBootOta1Screen(M5Canvas& canvas);
     
 public:
     // About screen easter egg handlers (called from porkchop.cpp)

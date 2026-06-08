@@ -205,7 +205,32 @@ void Display::showLoot(const String& ssid) {
 extern Porkchop porkchop;
 
 void Display::init() {
-    M5.Display.setRotation(1);
+#ifdef PORKCHOP_PANCAKE
+    // Pancake: TFT, touch, and keyboard are already inited by M5Cardputer.begin()
+    // in main.cpp.  We just create the sprite canvases using pancakeTFT.
+    pancakeTFT.setColorDepth(8);
+    pancakeTFT.fillRect(0, 0, DISPLAY_W, DISPLAY_H, COLOR_BG);
+
+    topBar.setColorDepth(8);
+    topBar.createSprite(DISPLAY_W, TOP_BAR_H);
+
+    mainCanvas.setColorDepth(8);
+    mainCanvas.createSprite(DISPLAY_W, MAIN_H);
+
+    bottomBar.setColorDepth(8);
+    bottomBar.createSprite(DISPLAY_W, BOTTOM_BAR_H);
+
+    topBar.setTextSize(1);
+    mainCanvas.setTextSize(1);
+    bottomBar.setTextSize(1);
+
+    lastActivityTime = millis();
+    dimmed = false;
+    screenForcedOff = false;
+
+    Weather::init();
+    Serial.println("[DISPLAY] Initialized (Pancake)");
+#else
     
     // CRITICAL: Set 8-bit mode for display AND sprites to avoid color conversion crashes
     // Must explicitly set sprite color depth - they don't inherit from display
@@ -238,6 +263,7 @@ void Display::init() {
     Weather::init();
     
     Serial.println("[DISPLAY] Initialized");
+#endif  // PORKCHOP_PANCAKE
 }
 
 void Display::update() {
@@ -265,7 +291,8 @@ void Display::update() {
     updateDimming();
     
     // SD Format mode hides bars to save RAM for disk operations
-    bool barsHidden = SdFormatMenu::areBarsHidden() || ChargingMode::areBarsHidden();
+    bool barsHidden = SdFormatMenu::areBarsHidden() || ChargingMode::areBarsHidden()
+                   || (mode == PorkchopMode::BOOT_OTA1);
     
     if (!barsHidden) {
         drawTopBar();
@@ -401,6 +428,9 @@ void Display::update() {
         case PorkchopMode::CHARGING:
             ChargingMode::draw(mainCanvas);
             break;
+        case PorkchopMode::BOOT_OTA1:
+            drawBootOta1Screen(mainCanvas);
+            break;
     }
     
     // Draw toast if active and not expired (show for 2 seconds)
@@ -477,6 +507,13 @@ void Display::pushAll() {
     mainCanvas.pushSprite(0, TOP_BAR_H);
     bottomBar.pushSprite(0, DISPLAY_H - BOTTOM_BAR_H);
     M5.Display.endWrite();
+
+#ifdef PORKCHOP_PANCAKE
+    // Redraw keyboard separator and keyboard in case a fillScreen wiped it.
+    // The keyboard pane itself is not touched by porkchop sprites, but the
+    // separator line sits at DISPLAY_H-1 and may have been clipped.
+    pancakeRedrawKeyboard();
+#endif
 
     if (topBarMessageTwoLineActive) {
         drawTopBarMessageTwoLineDirect();
@@ -637,6 +674,10 @@ void Display::drawTopBar() {
             snprintf(modeBuf, sizeof(modeBuf), "CHARGING");
             modeColor = COLOR_SUCCESS;
             break;
+        case PorkchopMode::BOOT_OTA1:
+            snprintf(modeBuf, sizeof(modeBuf), "BOOT OTA_1");
+            modeColor = COLOR_DANGER;
+            break;
     }
     
     // Append mood indicator
@@ -753,6 +794,15 @@ void Display::drawTopBarMessageTwoLineDirect() {
 
     uint16_t fg = getColorFG();
     uint16_t bg = getColorBG();
+#ifdef PORKCHOP_PANCAKE
+    pancakeTFT.fillRect(0, 0, DISPLAY_W, TOP_BAR_H * 2, fg);
+    pancakeTFT.setTextColor(bg, fg);
+    pancakeTFT.setTextSize(1);
+    pancakeTFT.setCursor(2, 3);
+    pancakeTFT.print(line1Buf);
+    pancakeTFT.setCursor(2, TOP_BAR_H + 3);
+    pancakeTFT.print(line2Buf);
+#else
     M5Cardputer.Display.fillRect(0, 0, DISPLAY_W, TOP_BAR_H * 2, fg);
     M5Cardputer.Display.setTextColor(bg, fg);
     M5Cardputer.Display.setTextSize(1);
@@ -761,6 +811,7 @@ void Display::drawTopBarMessageTwoLineDirect() {
     M5Cardputer.Display.print(line1Buf);
     M5Cardputer.Display.setCursor(2, TOP_BAR_H + 3);
     M5Cardputer.Display.print(line2Buf);
+#endif
 }
 
 void Display::drawBottomBar() {
@@ -1227,11 +1278,43 @@ static void bootSplashDelay(uint32_t ms) {
     }
 }
 
-// Boot splash - 3 screens: OINK OINK, MY NAME IS, PORKCHOP
 void Display::showBootSplash() {
-    // Ensure splash uses 8-bit RGB332 to match sprite palette and avoid 16-bit conversion costs.
-    // Splash draws directly to the display (no sprite heap allocation), but color depth still matters.
-    M5.Display.setColorDepth(8);
+#ifdef PORKCHOP_PANCAKE
+    auto& disp = pancakeTFT;
+    disp.setColorDepth(8);
+    disp.fillRect(0, 0, DISPLAY_W, DISPLAY_H, COLOR_BG);
+    disp.setTextColor(COLOR_FG);
+    disp.setTextDatum(MC_DATUM);
+    disp.setTextSize(4);
+    disp.drawString("OINK", DISPLAY_W/2, DISPLAY_H/2 - 20);
+    disp.drawString("OINK", DISPLAY_W/2, DISPLAY_H/2 + 20);
+    SFX::play(SFX::BOOT);
+    bootSplashDelay(800);
+    disp.fillRect(0, 0, DISPLAY_W, DISPLAY_H, COLOR_BG);
+    disp.setTextSize(3);
+    disp.drawString("MY NAME IS", DISPLAY_W/2, DISPLAY_H/2);
+    bootSplashDelay(800);
+    disp.fillRect(0, 0, DISPLAY_W, DISPLAY_H, COLOR_BG);
+    disp.setTextDatum(MC_DATUM);
+    disp.setTextSize(3);
+    disp.drawString("PORKCHOP", DISPLAY_W/2, DISPLAY_H/2 - 15);
+    disp.setTextSize(1);
+    disp.drawString("BASICALLY YOU, BUT AS AN ASCII PIG.", DISPLAY_W/2, DISPLAY_H/2 + 20);
+    disp.drawString("PANCAKE EDITION.", DISPLAY_W/2, DISPLAY_H/2 + 35);
+    bootSplashDelay(1200);
+    const char* cs = Config::personality().callsign;
+    if (cs[0] != '\0') {
+        disp.fillRect(0, 0, DISPLAY_W, DISPLAY_H, COLOR_BG);
+        disp.setTextDatum(MC_DATUM);
+        disp.setTextSize(2);
+        disp.drawString("WELCOME BACK", DISPLAY_W/2, DISPLAY_H/2 - 15);
+        disp.setTextSize(3);
+        disp.drawString(cs, DISPLAY_W/2, DISPLAY_H/2 + 15);
+        bootSplashDelay(1000);
+    }
+    disp.setTextDatum(TL_DATUM);
+    disp.setTextSize(1);
+#else
 
     // Screen 1: OINK OINK
     M5.Display.fillScreen(COLOR_BG);
@@ -1280,6 +1363,7 @@ void Display::showBootSplash() {
     // Reset display state for main UI compatibility
     M5.Display.setTextDatum(top_left);
     M5.Display.setTextSize(1);
+#endif  // PORKCHOP_PANCAKE
 }
 
 
@@ -1396,8 +1480,12 @@ void Display::clearTopBarMessage() {
     topBarMessageDuration = 0;
 }
 
-// M5Cardputer NeoPixel LED on GPIO 21
-#define LED_PIN 21
+// NeoPixel LED pin
+#ifdef PORKCHOP_PANCAKE
+#define LED_PIN PANCAKE_LED_PIN
+#else
+#define LED_PIN 21   // M5Cardputer NeoPixel on GPIO 21
+#endif
 #define SIREN_COOLDOWN_MS 2000
 
 void Display::flashSiren(uint8_t cycles) {
@@ -2508,6 +2596,33 @@ void Display::drawPigSyncDeviceSelect(M5Canvas& canvas) {
     }
 }
 
+void Display::drawBootOta1Screen(M5Canvas& canvas) {
+    canvas.fillSprite(COLOR_BG);
+    canvas.setTextColor(COLOR_FG);
+    canvas.setTextDatum(TC_DATUM);
+
+    // Big warning header
+    canvas.setTextSize(2);
+    canvas.setTextColor(COLOR_DANGER);
+    canvas.drawString("BOOT OTA_1", DISPLAY_W / 2, 10);
+
+    // Divider
+    canvas.drawFastHLine(20, 32, DISPLAY_W - 40, COLOR_FG);
+
+    canvas.setTextSize(1);
+    canvas.setTextColor(COLOR_FG);
+    canvas.drawString("SWITCHING TO OTA_1", DISPLAY_W / 2, 40);
+    canvas.drawString("MARAUDER WILL BOOT", DISPLAY_W / 2, 54);
+    canvas.drawString("PIG IS LEAVING.", DISPLAY_W / 2, 68);
+
+    // Animated dots based on millis
+    uint8_t dot = (millis() / 400) % 4;
+    char dots[5] = "    ";
+    for (uint8_t i = 0; i < dot; i++) dots[i] = '.';
+    canvas.setTextColor(COLOR_ACCENT);
+    canvas.drawString(dots, DISPLAY_W / 2, 84);
+}
+
 void Display::setBottomOverlay(const String& message) {
     if (message.length() == 0) {
         bottomOverlay[0] = '\0';
@@ -2843,14 +2958,21 @@ void Display::resetDimTimer() {
         screenForcedOff = false;
         dimmed = false;
         uint8_t brightness = Config::personality().brightness;
+#ifdef PORKCHOP_PANCAKE
+        analogWrite(PANCAKE_TFT_BL, brightness * 255 / 100);
+#else
         M5.Display.setBrightness(brightness * 255 / 100);
+#endif
         return;
     }
     if (dimmed) {
-        // Restore full brightness
         dimmed = false;
         uint8_t brightness = Config::personality().brightness;
+#ifdef PORKCHOP_PANCAKE
+        analogWrite(PANCAKE_TFT_BL, brightness * 255 / 100);
+#else
         M5.Display.setBrightness(brightness * 255 / 100);
+#endif
     }
 }
 
@@ -2858,28 +2980,36 @@ void Display::toggleScreenPower() {
     screenForcedOff = !screenForcedOff;
     if (screenForcedOff) {
         dimmed = true;
+#ifdef PORKCHOP_PANCAKE
+        analogWrite(PANCAKE_TFT_BL, 0);
+#else
         M5.Display.setBrightness(0);
+#endif
         return;
     }
-
     dimmed = false;
     lastActivityTime = millis();
     uint8_t brightness = Config::personality().brightness;
+#ifdef PORKCHOP_PANCAKE
+    analogWrite(PANCAKE_TFT_BL, brightness * 255 / 100);
+#else
     M5.Display.setBrightness(brightness * 255 / 100);
+#endif
 }
 
 void Display::updateDimming() {
     if (screenForcedOff) return;
     uint16_t timeout = Config::personality().dimTimeout;
-    if (timeout == 0) return;  // Dimming disabled
-    
+    if (timeout == 0) return;
     uint32_t elapsed = (millis() - lastActivityTime) / 1000;
-    
     if (!dimmed && elapsed >= timeout) {
-        // Time to dim
         dimmed = true;
         uint8_t dimLevel = Config::personality().dimLevel;
+#ifdef PORKCHOP_PANCAKE
+        analogWrite(PANCAKE_TFT_BL, dimLevel * 255 / 100);
+#else
         M5.Display.setBrightness(dimLevel * 255 / 100);
+#endif
     }
 }
 

@@ -561,7 +561,11 @@ static bool setSettingValue(SettingId id, int value) {
             if (Config::personality().brightness == newVal) return false;
             Config::personality().brightness = newVal;
             Display::resetDimTimer();
+#ifdef PORKCHOP_PANCAKE
+            analogWrite(PANCAKE_TFT_BL, newVal * 255 / 100);
+#else
             M5.Display.setBrightness(newVal * 255 / 100);
+#endif
             return true;
         }
         case SET_SOUND: {

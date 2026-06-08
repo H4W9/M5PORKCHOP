@@ -3,6 +3,10 @@
 #include "porkchop.h"
 #include <M5Cardputer.h>
 #include "../ui/display.h"
+#ifdef PORKCHOP_DUALBOOT
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
+#endif
 #include "../ui/menu.h"
 #include "../ui/settings_menu.h"
 #include "../ui/captures_menu.h"
@@ -66,6 +70,7 @@ static const char* modeToString(PorkchopMode mode) {
         case PorkchopMode::BACON_MODE: return "BACON";
         case PorkchopMode::SD_FORMAT: return "SD_FORMAT";
         case PorkchopMode::CHARGING: return "CHARGING";
+        case PorkchopMode::BOOT_OTA1: return "BOOT_OTA1";
         case PorkchopMode::ABOUT: return "ABOUT";
         default: return "UNKNOWN";
     }
@@ -124,6 +129,7 @@ static bool isAutoConditionSafe(PorkchopMode mode) {
         case PorkchopMode::UNLOCKABLES:
         case PorkchopMode::BOUNTY_STATUS:
         case PorkchopMode::SD_FORMAT:
+        case PorkchopMode::BOOT_OTA1:
             return true;
         default:
             return false;
@@ -226,6 +232,7 @@ void Porkchop::init() {
             case 19: setMode(PorkchopMode::DIAGNOSTICS); break;
             case 20: setMode(PorkchopMode::SD_FORMAT); break;
             case 21: setMode(PorkchopMode::CHARGING); break;
+            case 22: setMode(PorkchopMode::BOOT_OTA1); break;
         }
     });
 
@@ -528,6 +535,10 @@ void Porkchop::setMode(PorkchopMode mode) {
         case PorkchopMode::CHARGING:
             SDLog::log("PORK", "Mode: CHARGING");
             ChargingMode::start();
+            break;
+        case PorkchopMode::BOOT_OTA1:
+            SDLog::log("PORK", "Mode: BOOT_OTA1 - switching to ota_1");
+            XP::save();  // Save XP before we leave
             break;
         default:
             break;
@@ -976,6 +987,34 @@ void Porkchop::updateMode() {
                 setMode(PorkchopMode::IDLE);
             }
             break;
+        case PorkchopMode::BOOT_OTA1: {
+#ifdef PORKCHOP_DUALBOOT
+            // Find the ota_1 partition and set it as the next boot target,
+            // then reboot. The DualBoot bootloader will launch Marauder.
+            const esp_partition_t* ota1 =
+                esp_partition_find_first(ESP_PARTITION_TYPE_APP,
+                                         ESP_PARTITION_SUBTYPE_APP_OTA_1,
+                                         nullptr);
+            if (ota1) {
+                esp_err_t err = esp_ota_set_boot_partition(ota1);
+                if (err == ESP_OK) {
+                    Display::showToast("BOOTING OTA_1...", 1500);
+                    delay(1500);
+                    esp_restart();
+                } else {
+                    Display::showToast("OTA_1 NOT FOUND!", 3000);
+                    setMode(PorkchopMode::MENU);
+                }
+            } else {
+                Display::showToast("OTA_1 PARTITION MISSING", 3000);
+                setMode(PorkchopMode::MENU);
+            }
+#else
+            // Non-DualBoot build: just go back to menu
+            setMode(PorkchopMode::MENU);
+#endif
+            break;
+        }
         default:
             break;
     }

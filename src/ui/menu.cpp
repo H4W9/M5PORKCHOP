@@ -147,6 +147,11 @@ static const char* const H_CHARGING[] = {
     "BATTERY REST. SERVICES CEASED.",
     "CHARGING VIBES. MAX CHILL."
 };
+static const char* const H_BOOTOTA1[] = {
+    "REBOOT INTO OTA_1. NO RETURN.",
+    "JUMP TO THE OTHER SIDE. MARAUDER AWAITS.",
+    "BYE PIG. HELLO MARAUDER."
+};
 
 // Root menu items
 const RootItem Menu::ROOT_ITEMS[] = {
@@ -206,7 +211,10 @@ const MenuItem Menu::GROUP_SYSTEM[] = {
     {"::", "DIAGDATA",   19, H_DIAG,     (uint8_t)(sizeof(H_DIAG)/sizeof(H_DIAG[0]))},
     {"SD", "FORMATSD",  20, H_SDFMT,    (uint8_t)(sizeof(H_SDFMT)/sizeof(H_SDFMT[0]))},
     {"~~", "CHARGING",  21, H_CHARGING, (uint8_t)(sizeof(H_CHARGING)/sizeof(H_CHARGING[0]))},
-    {":?", "ABOUTPIG",   6,  H_ABOUT,    (uint8_t)(sizeof(H_ABOUT)/sizeof(H_ABOUT[0]))}
+    {":?", "ABOUTPIG",   6,  H_ABOUT,    (uint8_t)(sizeof(H_ABOUT)/sizeof(H_ABOUT[0]))},
+#ifdef PORKCHOP_DUALBOOT
+    {">>", "BOOT OTA_1", 22, H_BOOTOTA1, (uint8_t)(sizeof(H_BOOTOTA1)/sizeof(H_BOOTOTA1[0]))}
+#endif
 };
 const uint8_t Menu::GROUP_SYSTEM_SIZE = sizeof(GROUP_SYSTEM) / sizeof(GROUP_SYSTEM[0]);
 

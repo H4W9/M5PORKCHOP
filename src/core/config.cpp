@@ -4,7 +4,9 @@
 #include "config.h"
 #include "sdlog.h"
 #include "sd_layout.h"
+#ifndef PORKCHOP_PANCAKE
 #include <M5Cardputer.h>
+#endif
 #include <SD.h>
 #include <SPIFFS.h>
 #include <SPI.h>
@@ -380,6 +382,10 @@ int Config::sdCsPin() {
 }
 
 void Config::prepareCapLoraGpio() {
+#ifdef PORKCHOP_PANCAKE
+    // Pancake has no CapLoRa868 module — this is a no-op
+    Serial.println("[CONFIG] prepareCapLoraGpio: skipped on Pancake (no CapLoRa)");
+#else
     // GPIO 13 is ESP32-S3 default FSPIQ (MISO) via IOMUX. Even though SD remaps
     // FSPI MISO to G39, the default IOMUX linkage on G13 can disrupt the FSPI
     // peripheral when Serial2 reconfigures G13 as UART TX output.
@@ -405,6 +411,7 @@ void Config::prepareCapLoraGpio() {
     pinMode(CapLoraPins::LORA_DIO1, INPUT);
 
     Serial.println("[CONFIG] CapLoRa868: SX1262 reset, CS deasserted, G13 IOMUX cleared");
+#endif
 }
 
 bool Config::reinitSD() {
