@@ -14,6 +14,9 @@
 
 #ifdef PORKCHOP_PANCAKE
 
+// lgfxFont_t — opaque font type used in setFont() signatures.
+// Defined here as the single authoritative definition for the Pancake build.
+struct lgfxFont_t {};
 
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
