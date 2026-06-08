@@ -166,9 +166,74 @@ struct Keyboard_Class {
     KeysState keysState()         { return PancakeKB::keysState(); }
 };
 
-// ---- Power stub --------------------------------------------
+// ---- Power — MAX17048 fuel gauge (I2C 0x36) ----------------
+// Pancake hardware has a MAX17048 on the same I2C bus as the touch
+// controller (SDA=PANCAKE_TOUCH_SDA, SCL=PANCAKE_TOUCH_SCL).
+//
+// Registers:
+//   0x02 VCELL  — battery voltage, 1 LSB = 78.125 µV (raw >> 4 * 1.25 mV)
+//   0x04 SOC    — state of charge, MSB = whole %, LSB = 1/256 %
+//   0x08 STATUS — bit 0 = Vreset alert, etc.
+//
+// Charging detection: MAX17048 doesn't have a charge pin, but VBUS
+// presence (USB connected) implies charging.  We detect VBUS by
+// comparing cell voltage to a threshold: >4.05 V and rising = charging.
+// For simplicity, report charge_unknown and let the caller decide.
+
+#define MAX17048_ADDR   0x36
+#define MAX17048_VCELL  0x02
+#define MAX17048_SOC    0x04
+
+namespace m5 {
+    struct Power_Class {
+        enum class is_charging_t : uint8_t {
+            is_discharging = 0,
+            is_charging    = 1,
+            charge_unknown = 2
+        };
+    };
+}
+
 struct M5Power_Class {
-    int getBatteryLevel() { return 75; }
+private:
+    static uint16_t _readReg16(uint8_t reg) {
+        Wire.beginTransmission(MAX17048_ADDR);
+        Wire.write(reg);
+        if (Wire.endTransmission(false) != 0) return 0xFFFF;
+        Wire.requestFrom((uint8_t)MAX17048_ADDR, (uint8_t)2);
+        if (Wire.available() < 2) return 0xFFFF;
+        uint16_t val = (uint16_t)Wire.read() << 8;
+        val |= Wire.read();
+        return val;
+    }
+
+public:
+    // Returns battery voltage in millivolts (e.g. 3750 = 3.75 V)
+    int getBatteryVoltage() {
+        uint16_t raw = _readReg16(MAX17048_VCELL);
+        if (raw == 0xFFFF) return 3700;  // fallback if not present
+        // VCELL: each LSB = 78.125 µV → mV = raw * 78.125 / 1000
+        // Simplified integer: raw * 5 / 64  (close enough, <0.1% error)
+        return (int)((uint32_t)raw * 5 / 64);
+    }
+
+    // Returns state of charge 0-100 %
+    int getBatteryLevel() {
+        uint16_t raw = _readReg16(MAX17048_SOC);
+        if (raw == 0xFFFF) return 75;   // fallback
+        int pct = (raw >> 8) & 0xFF;    // integer percent in MSB
+        if (pct > 100) pct = 100;
+        return pct;
+    }
+
+    // MAX17048 doesn't expose a charge pin.
+    // Return charge_unknown — callers handle this gracefully.
+    m5::Power_Class::is_charging_t isCharging() {
+        return m5::Power_Class::is_charging_t::charge_unknown;
+    }
+
+    // VBUS voltage not available from MAX17048.
+    int getVBUSVoltage() { return 0; }
 };
 
 // ---- Speaker stub ------------------------------------------
