@@ -782,7 +782,7 @@ update_last_packet_time:
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 void pigSyncOnSent(const wifi_tx_info_t* tx_info, esp_now_send_status_t status) {
-    const uint8_t* mac = tx_info->peer_addr;
+    const uint8_t* mac = tx_info->des_addr;
 #else
 void pigSyncOnSent(const uint8_t* mac, esp_now_send_status_t status) {
 #endif
