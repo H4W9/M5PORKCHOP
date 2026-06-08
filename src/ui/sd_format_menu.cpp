@@ -191,7 +191,7 @@ void SdFormatMenu::handleInput() {
     if (state == State::CONFIRM) {
         if (M5Cardputer.Keyboard.isKeyPressed('y') || M5Cardputer.Keyboard.isKeyPressed('Y')) {
             // SAFETY: Require external power to prevent data corruption from power loss
-            if (!M5.Power.isCharging()) {
+            if (M5.Power.isCharging() != m5::Power_Class::is_charging_t::is_charging) {
                 Display::notify(NoticeKind::WARNING, "PLUG IN POWER!", 2000);
                 return;
             }

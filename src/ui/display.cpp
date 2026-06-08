@@ -206,18 +206,12 @@ extern Porkchop porkchop;
 
 void Display::init() {
 #ifdef PORKCHOP_PANCAKE
-    // Pancake: TFT, touch, and keyboard are already inited by M5Cardputer.begin()
-    // in main.cpp.  We just create the sprite canvases using pancakeTFT.
-    pancakeTFT.setColorDepth(8);
+    // Pancake: TFT, touch, and keyboard already inited by M5Cardputer.begin().
+    // TFT_eSPI doesn't have setColorDepth() — color depth is compile-time only.
     pancakeTFT.fillRect(0, 0, DISPLAY_W, DISPLAY_H, COLOR_BG);
 
-    topBar.setColorDepth(8);
     topBar.createSprite(DISPLAY_W, TOP_BAR_H);
-
-    mainCanvas.setColorDepth(8);
     mainCanvas.createSprite(DISPLAY_W, MAIN_H);
-
-    bottomBar.setColorDepth(8);
     bottomBar.createSprite(DISPLAY_W, BOTTOM_BAR_H);
 
     topBar.setTextSize(1);
@@ -1272,7 +1266,6 @@ static void bootSplashDelay(uint32_t ms) {
 void Display::showBootSplash() {
 #ifdef PORKCHOP_PANCAKE
     auto& disp = pancakeTFT;
-    disp.setColorDepth(8);
     disp.fillRect(0, 0, DISPLAY_W, DISPLAY_H, COLOR_BG);
     disp.setTextColor(COLOR_FG);
     disp.setTextDatum(MC_DATUM);

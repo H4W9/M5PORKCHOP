@@ -164,7 +164,7 @@ void DiagnosticsMenu::saveSnapshot() {
     file.printf("POWER STATUS:\n");
     file.printf("  Battery Voltage: %.2f V\n", M5.Power.getBatteryVoltage() / 1000.0f);
     file.printf("  Battery Level: %d%%\n", M5.Power.getBatteryLevel());
-    file.printf("  Is Charging: %s\n", M5.Power.isCharging() ? "YES" : "NO");
+    file.printf("  Is Charging: %s\n", (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging) ? "YES" : "NO");
     file.printf("\n");
 
     file.close();
@@ -357,7 +357,7 @@ void DiagnosticsMenu::draw(M5Canvas& canvas) {
     canvas.drawString(batt, 80, y);
     y += lineH;
     canvas.drawString("CHARGING:", 4, y);
-    canvas.drawString(M5.Power.isCharging() ? "YES" : "NO", 80, y);
+    canvas.drawString((M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging) ? "YES" : "NO", 80, y);
     y += lineH + 6;
 
     // Controls (compressed)
