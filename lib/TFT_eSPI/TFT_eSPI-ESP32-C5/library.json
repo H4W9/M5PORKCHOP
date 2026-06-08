@@ -5,6 +5,8 @@
   "frameworks": "arduino",
   "platforms": "espressif32",
   "build": {
-    "flags": ["-DUSER_SETUP_LOADED=1"]
+    "srcDir": ".",
+    "includeDir": ".",
+    "extraIncludes": ["User_Setups"]
   }
 }
