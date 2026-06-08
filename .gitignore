@@ -5,6 +5,8 @@
 .con*/
 .cu*
 *.csv
+!partitions.csv
+!partitions_pancake.csv
 *.md
 *.txt
 *.bin
