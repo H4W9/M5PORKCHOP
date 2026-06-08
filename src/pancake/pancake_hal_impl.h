@@ -27,6 +27,21 @@ struct lgfxFont_t {};
 
 // ---- Hardware libraries (safe here — only included by our files) --
 #include <TFT_eSPI.h>
+
+// ---- M5GFX text datum name aliases -------------------------
+// M5GFX uses descriptive names; TFT_eSPI uses *_DATUM macros.
+// Map them so porkchop source compiles unchanged.
+#ifndef top_left
+#define top_left      TL_DATUM
+#define top_center    TC_DATUM
+#define top_right     TR_DATUM
+#define middle_left   ML_DATUM
+#define middle_center MC_DATUM
+#define middle_right  MR_DATUM
+#define bottom_left   BL_DATUM
+#define bottom_center BC_DATUM
+#define bottom_right  BR_DATUM
+#endif
 #include <Wire.h>
 #include <SD.h>
 #include <WiFi.h>
