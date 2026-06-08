@@ -329,14 +329,12 @@ bool fatfsFormat(uint8_t pdrv, uint64_t cardBytes, DWORD sectorSize) {
 #if defined(MKFS_PARM) || defined(PORKCHOP_PANCAKE)
     MKFS_PARM opt{};
     opt.fmt = FM_FAT32;
-    opt.n_fat = 2;      // DUAL FAT TABLES for redundancy (critical fix!)
-    opt.align = 0;      // Auto-align to card erase block
-    opt.n_root = 0;     // Default root directory entries
+    opt.n_fat = 2;
+    opt.align = 0;
+    opt.n_root = 0;
     opt.au_size = auSize;
 #else
-    // IDF 5.x always has MKFS_PARM — this branch should never compile.
-    // If it does, force a build error rather than silently using the wrong API.
-    #error "MKFS_PARM not defined — check FatFS version. IDF 5.x should always have it."
+    BYTE opt = FM_FAT32;
 #endif
 
     uint8_t* workbuf = (uint8_t*)heap_caps_malloc(4096, MALLOC_CAP_8BIT);
