@@ -326,7 +326,7 @@ bool fatfsFormat(uint8_t pdrv, uint64_t cardBytes, DWORD sectorSize) {
     char drive[3] = {static_cast<char>('0' + pdrv), ':', '\0'};
     DWORD auSize = pickAllocationUnitBytes(effectiveBytes);
 
-#if defined(MKFS_PARM)
+#if defined(MKFS_PARM) || defined(PORKCHOP_PANCAKE)
     MKFS_PARM opt{};
     opt.fmt = FM_FAT32;
     opt.n_fat = 2;      // DUAL FAT TABLES for redundancy (critical fix!)
@@ -334,8 +334,9 @@ bool fatfsFormat(uint8_t pdrv, uint64_t cardBytes, DWORD sectorSize) {
     opt.n_root = 0;     // Default root directory entries
     opt.au_size = auSize;
 #else
-    // Older FatFs uses a BYTE for format flags (FDISK not supported here).
-    BYTE opt = FM_FAT32;
+    // IDF 5.x always has MKFS_PARM — this branch should never compile.
+    // If it does, force a build error rather than silently using the wrong API.
+    #error "MKFS_PARM not defined — check FatFS version. IDF 5.x should always have it."
 #endif
 
     uint8_t* workbuf = (uint8_t*)heap_caps_malloc(4096, MALLOC_CAP_8BIT);
@@ -356,7 +357,7 @@ bool fatfsFormat(uint8_t pdrv, uint64_t cardBytes, DWORD sectorSize) {
     // Reset WDT before blocking f_mkfs call (can take several seconds)
     esp_task_wdt_reset();
 
-#if defined(MKFS_PARM)
+#if defined(MKFS_PARM) || defined(PORKCHOP_PANCAKE)
     FRESULT fr = f_mkfs(drive, &opt, workbuf, 4096);
 #else
     FRESULT fr = f_mkfs(drive, opt, auSize, workbuf, 4096);
