@@ -8,13 +8,16 @@
 #include "pancake_hal_impl.h"
 
 // ---- Hardware object instances -----------------------------
-FT6336Touch     pancakeTouch;
-PancakeKeyboard pancakeKeyboard;
-TFT_eSPI        pancakeTFT;
+// init_priority(101) ensures these construct before any translation unit's
+// globals that use default priority (65535), including Display::topBar etc.
+// in display.cpp whose M5Canvas constructors take &pancakeTFT as argument.
+FT6336Touch     pancakeTouch     __attribute__((init_priority(101)));
+PancakeKeyboard pancakeKeyboard  __attribute__((init_priority(101)));
+TFT_eSPI        pancakeTFT       __attribute__((init_priority(101)));
 
 // ---- Top-level M5 object instances -------------------------
-M5Cardputer_Class M5Cardputer;
-M5Unified_Class   M5;
+M5Cardputer_Class M5Cardputer    __attribute__((init_priority(102)));
+M5Unified_Class   M5             __attribute__((init_priority(102)));
 
 // ---- PancakeKB state ---------------------------------------
 namespace PancakeKB {
