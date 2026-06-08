@@ -2,10 +2,14 @@
 #pragma once
 
 // PANCAKE: pancake_hal.h is force-included before this via -include,
-// so M5Unified.h is already shimmed.  On original Cardputer builds
-// the real header is used.
-#ifndef PORKCHOP_PANCAKE
-#include <M5Unified.h>
+// blocking M5Unified.h. The full HAL types (M5Canvas, M5Cardputer, etc.)
+// come from pancake_hal_impl.h which is safe to include here because
+// display.h is only ever included by porkchop's own source files,
+// not by library files.
+#ifdef PORKCHOP_PANCAKE
+  #include "pancake/pancake_hal_impl.h"
+#else
+  #include <M5Unified.h>
 #endif
 
 // Forward declarations

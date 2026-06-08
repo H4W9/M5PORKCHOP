@@ -1,7 +1,6 @@
 name: Build
 
 on:
-  workflow_dispatch:
   push:
     branches: [ main, develop, personality_disorder_innit ]
   pull_request:
@@ -28,6 +27,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ matrix.env }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            pio-${{ matrix.env }}-
 
       - name: Install PlatformIO
         run: |

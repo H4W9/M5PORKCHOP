@@ -1,11 +1,11 @@
 // pancake_hal.cpp
 // Definitions for all Pancake HAL globals.
 // This file is compiled exactly once, giving one definition to all
-// the extern declarations in pancake_hal.h.
+// the extern declarations in pancake_hal_impl.h.
 
 #ifdef PORKCHOP_PANCAKE
 
-#include "pancake_hal.h"
+#include "pancake_hal_impl.h"
 
 // ---- Hardware object instances -----------------------------
 FT6336Touch     pancakeTouch;
