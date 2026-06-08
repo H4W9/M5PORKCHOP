@@ -511,8 +511,14 @@ static bool lastControlRspValid = false;
 
 // ==[ ESP-NOW CALLBACKS ]==
 
-// ESP32-S3 uses older ESP-NOW callback signature (no esp_now_recv_info_t)
+// IDF 5.x changed the recv callback: mac_addr replaced by esp_now_recv_info_t*
+// IDF 4.x (ESP32-S3/Cardputer) used the old (mac, data, len) signature.
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+void pigSyncOnRecv(const esp_now_recv_info_t* recv_info, const uint8_t* data, int len) {
+    const uint8_t* mac = recv_info->src_addr;
+#else
 void pigSyncOnRecv(const uint8_t* mac, const uint8_t* data, int len) {
+#endif
     PIGSYNC_LOGF("[PIGSYNC-CLI-RX] len=%d from %02X:%02X:%02X:%02X:%02X:%02X\n", 
                   len, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     
@@ -774,7 +780,12 @@ update_last_packet_time:
     taskEXIT_CRITICAL(&pendingMux);
 }
 
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+void pigSyncOnSent(const wifi_tx_info_t* tx_info, esp_now_send_status_t status) {
+    const uint8_t* mac = tx_info->peer_addr;
+#else
 void pigSyncOnSent(const uint8_t* mac, esp_now_send_status_t status) {
+#endif
     if (status != ESP_NOW_SEND_SUCCESS) {
         PIGSYNC_LOGF("[PIGSYNC-CLI-ERR] Send failed (mac=%02X:%02X:%02X:%02X:%02X:%02X)\n",
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
