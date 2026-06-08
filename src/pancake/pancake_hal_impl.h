@@ -261,11 +261,16 @@ struct M5Cardputer_Class {
 
     template<typename... Args>
     void begin(Args&&...) {
+        // Keep backlight OFF until display is initialized to prevent flicker
+        pinMode(PANCAKE_TFT_BL, OUTPUT);
+        analogWrite(PANCAKE_TFT_BL, 0);
+
         pancakeTFT.init();
         pancakeTFT.setRotation(PANCAKE_ROTATION);
         pancakeTFT.fillScreen(TFT_BLACK);
-        pinMode(PANCAKE_TFT_BL, OUTPUT);
-        digitalWrite(PANCAKE_TFT_BL, HIGH);
+
+        // Now turn on backlight — display is ready
+        analogWrite(PANCAKE_TFT_BL, 255);
 
         if (!pancakeTouch.begin()) {
             Serial.println("[PANCAKE] FT6336 not found");
@@ -277,9 +282,11 @@ struct M5Cardputer_Class {
         pancakeTFT.drawFastHLine(0, PANCAKE_KB_Y - 1, PANCAKE_SCREEN_W, 0x528A);
         pancakeTFT.drawFastHLine(0, PANCAKE_KB_Y,     PANCAKE_SCREEN_W, 0x528A);
 
-        SPI.begin(PANCAKE_TFT_CLK, PANCAKE_TFT_MISO, PANCAKE_TFT_MOSI,
-                  PANCAKE_SD_CS);
-        if (!SD.begin(PANCAKE_SD_CS, SPI, 25000000)) {
+        // SD card: TFT_eSPI already called SPI.begin() with the TFT pins.
+        // SD.begin() with the same SPI instance works because TFT_eSPI uses
+        // chip-select to multiplex — do NOT call SPI.begin() again here as it
+        // would reinitialize the bus and corrupt the TFT state.
+        if (!SD.begin(PANCAKE_SD_CS)) {
             Serial.println("[PANCAKE] SD mount failed");
         }
     }
