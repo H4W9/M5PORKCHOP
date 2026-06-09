@@ -94,8 +94,8 @@ public:
     static void requestTopBarMessage(const char* message, uint32_t durationMs = 0);
 
     // Canvas access for direct drawing
-    static M5Canvas& getTopBar() { return *topBar; }
-    static M5Canvas& getMain() { return *mainCanvas; }
+    static M5Canvas& getTopBar()    { return *topBar; }
+    static M5Canvas& getMain()      { return *mainCanvas; }
     static M5Canvas& getBottomBar() { return *bottomBar; }
     
     // Helper functions

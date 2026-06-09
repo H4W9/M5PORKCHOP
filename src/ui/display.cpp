@@ -156,13 +156,21 @@ static void drawTopBarHeapHealth(M5Canvas& topBar) {
     topBar.drawString(levelStr, 2, 3);
     topBar.setTextDatum(top_right);
     topBar.drawString(msgBuf, msgRightX, 3);
-    drawHeartIcon(topBar, heartX, 3, COLOR_BG);
+    drawHeartIcon(*topBar, heartX, 3, COLOR_BG);
 }
 
 // Static member initialization
+#ifdef PORKCHOP_PANCAKE
 M5Canvas* Display::topBar = nullptr;
 M5Canvas* Display::mainCanvas = nullptr;
 M5Canvas* Display::bottomBar = nullptr;
+#else
+// Use pointers even on cardputer so all call sites can use -> uniformly.
+// The actual objects are constructed in Display::init().
+M5Canvas* Display::topBar = nullptr;
+M5Canvas* Display::mainCanvas = nullptr;
+M5Canvas* Display::bottomBar = nullptr;
+#endif
 bool Display::gpsStatus = false;
 bool Display::wifiStatus = false;
 bool Display::mlStatus = false;
@@ -325,13 +333,13 @@ void Display::update() {
     switch (mode) {
         case PorkchopMode::IDLE:
             // Draw piglet avatar
-            Avatar::draw(mainCanvas);
+            Avatar::draw(*mainCanvas);
             // Draw clouds above stars/pig before rain
-            Weather::drawClouds(mainCanvas, COLOR_FG);
+            Weather::drawClouds(*mainCanvas, COLOR_FG);
             // Draw weather effects (rain, wind particles) over avatar
-            Weather::draw(mainCanvas, COLOR_FG, COLOR_BG);
+            Weather::draw(*mainCanvas, COLOR_FG, COLOR_BG);
             // Draw mood bubble LAST so it's always on top
-            Mood::draw(mainCanvas);
+            Mood::draw(*mainCanvas);
             break;
             
         case PorkchopMode::OINK_MODE:
@@ -339,92 +347,92 @@ void Display::update() {
         case PorkchopMode::WARHOG_MODE:
         case PorkchopMode::PIGGYBLUES_MODE:
             // Draw piglet avatar
-            Avatar::draw(mainCanvas);
+            Avatar::draw(*mainCanvas);
             // Draw clouds above stars/pig before rain
-            Weather::drawClouds(mainCanvas, COLOR_FG);
+            Weather::drawClouds(*mainCanvas, COLOR_FG);
             // Draw weather effects (rain, wind particles) over avatar
-            Weather::draw(mainCanvas, COLOR_FG, COLOR_BG);
+            Weather::draw(*mainCanvas, COLOR_FG, COLOR_BG);
             // Draw mood bubble LAST so it's always on top
-            Mood::draw(mainCanvas);
+            Mood::draw(*mainCanvas);
             break;
 
         case PorkchopMode::PIGSYNC_DEVICE_SELECT:
             // Draw device selection menu
-            drawPigSyncDeviceSelect(mainCanvas);
+            drawPigSyncDeviceSelect(*mainCanvas);
             break;
 
             
         case PorkchopMode::SPECTRUM_MODE:
             // Spectrum mode draws its own content including XP bar
-            SpectrumMode::draw(mainCanvas);
+            SpectrumMode::draw(*mainCanvas);
             break;
             
         case PorkchopMode::MENU:
             // Draw menu
             Menu::update();
-            Menu::draw(mainCanvas);
+            Menu::draw(*mainCanvas);
             break;
             
         case PorkchopMode::SETTINGS:
             SettingsMenu::update();
-            SettingsMenu::draw(mainCanvas);
+            SettingsMenu::draw(*mainCanvas);
             break;
             
         case PorkchopMode::CAPTURES:
-            CapturesMenu::draw(mainCanvas);
+            CapturesMenu::draw(*mainCanvas);
             break;
             
         case PorkchopMode::ACHIEVEMENTS:
-            AchievementsMenu::draw(mainCanvas);
+            AchievementsMenu::draw(*mainCanvas);
             break;
             
         case PorkchopMode::ABOUT:
-            drawAboutScreen(mainCanvas);
+            drawAboutScreen(*mainCanvas);
             break;
             
         case PorkchopMode::FILE_TRANSFER:
-            drawFileTransferScreen(mainCanvas);
+            drawFileTransferScreen(*mainCanvas);
             break;
             
         case PorkchopMode::CRASH_VIEWER:
-            CrashViewer::draw(mainCanvas);
+            CrashViewer::draw(*mainCanvas);
             break;
 
         case PorkchopMode::DIAGNOSTICS:
-            DiagnosticsMenu::draw(mainCanvas);
+            DiagnosticsMenu::draw(*mainCanvas);
             break;
             
         case PorkchopMode::SWINE_STATS:
-            SwineStats::draw(mainCanvas);
+            SwineStats::draw(*mainCanvas);
             break;
             
         case PorkchopMode::BOAR_BROS:
-            BoarBrosMenu::draw(mainCanvas);
+            BoarBrosMenu::draw(*mainCanvas);
             break;
             
         case PorkchopMode::WIGLE_MENU:
-            WigleMenu::draw(mainCanvas);
+            WigleMenu::draw(*mainCanvas);
             break;
             
         case PorkchopMode::UNLOCKABLES:
-            UnlockablesMenu::draw(mainCanvas);
+            UnlockablesMenu::draw(*mainCanvas);
             break;
             
         case PorkchopMode::BOUNTY_STATUS:
-            BountyStatusMenu::draw(mainCanvas);
+            BountyStatusMenu::draw(*mainCanvas);
             break;
             
         case PorkchopMode::BACON_MODE:
-            BaconMode::draw(mainCanvas);
+            BaconMode::draw(*mainCanvas);
             break;
         case PorkchopMode::SD_FORMAT:
-            SdFormatMenu::draw(mainCanvas);
+            SdFormatMenu::draw(*mainCanvas);
             break;
         case PorkchopMode::CHARGING:
-            ChargingMode::draw(mainCanvas);
+            ChargingMode::draw(*mainCanvas);
             break;
         case PorkchopMode::BOOT_OTA1:
-            drawBootOta1Screen(mainCanvas);
+            drawBootOta1Screen(*mainCanvas);
             break;
     }
     
@@ -531,7 +539,7 @@ void Display::drawTopBar() {
 
     // Check for XP notification, show for 5 sec after gain
     if (XP::shouldShowXPNotification()) {
-        XP::drawTopBarXP(topBar);
+        XP::drawTopBarXP(*topBar);
         return;
     }
 
@@ -1012,7 +1020,7 @@ void Display::drawBottomBar() {
         const int heartW = 9;
         int heartX = barX - gap - heartW;
         int heartY = 3;
-        drawHeartIcon(bottomBar, heartX, heartY, COLOR_BG);
+        drawHeartIcon(*bottomBar, heartX, heartY, COLOR_BG);
 
         bottomBar->drawRect(barX, barY, barW, barH, COLOR_BG);
         int fillW = (barW - 2) * pct / 100;
