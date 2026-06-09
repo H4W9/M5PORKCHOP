@@ -51,9 +51,9 @@ struct lgfxFont_t {};
 #include "PancakeKeyboard.h"
 
 // ---- Global hardware objects (defined in pancake_hal.cpp) ---
-extern FT6336Touch     pancakeTouch;
-extern PancakeKeyboard pancakeKeyboard;
-extern TFT_eSPI        pancakeTFT;
+extern FT6336Touch*     pancakeTouch;
+extern PancakeKeyboard* pancakeKeyboard;
+extern TFT_eSPI*        pancakeTFT;
 
 // ---- M5Canvas = TFT_eSprite subclass -----------------------
 class M5Canvas : public TFT_eSprite {
@@ -115,35 +115,35 @@ struct M5GFX {
     void setRotation(int)         {}
     void setColorDepth(int)       {}
     void fillScreen(uint32_t c)   {
-        pancakeTFT.fillRect(0, 0, PANCAKE_SCREEN_W, PANCAKE_PORK_H, c);
+        pancakeTFT->fillRect(0, 0, PANCAKE_SCREEN_W, PANCAKE_PORK_H, c);
     }
     void setTextColor(uint32_t fg, uint32_t bg = 0) {
-        pancakeTFT.setTextColor(fg, bg);
+        pancakeTFT->setTextColor(fg, bg);
     }
-    void setTextSize(uint8_t s)   { pancakeTFT.setTextSize(s); }
-    void setTextDatum(uint8_t d)  { pancakeTFT.setTextDatum(d); }
-    void setCursor(int x, int y)  { pancakeTFT.setCursor(x, y); }
-    void setCursor(int x, int y, uint8_t) { pancakeTFT.setCursor(x, y); }
-    void print(const char* s)     { pancakeTFT.print(s); }
+    void setTextSize(uint8_t s)   { pancakeTFT->setTextSize(s); }
+    void setTextDatum(uint8_t d)  { pancakeTFT->setTextDatum(d); }
+    void setCursor(int x, int y)  { pancakeTFT->setCursor(x, y); }
+    void setCursor(int x, int y, uint8_t) { pancakeTFT->setCursor(x, y); }
+    void print(const char* s)     { pancakeTFT->print(s); }
     void setFont(const void*)     {}
     void setFont(const lgfxFont_t*) {}
     void drawString(const char* s, int x, int y) {
-        pancakeTFT.drawString(s, x, y);
+        pancakeTFT->drawString(s, x, y);
     }
     void fillRect(int x, int y, int w, int h, uint32_t c) {
         if (y + h > PANCAKE_PORK_H) h = PANCAKE_PORK_H - y;
-        if (h > 0) pancakeTFT.fillRect(x, y, w, h, c);
+        if (h > 0) pancakeTFT->fillRect(x, y, w, h, c);
     }
     void drawFastHLine(int x, int y, int w, uint32_t c) {
-        pancakeTFT.drawFastHLine(x, y, w, c);
+        pancakeTFT->drawFastHLine(x, y, w, c);
     }
     void readRectRGB(int x, int y, int w, int h, uint8_t* buf) {
-        pancakeTFT.readRectRGB(x, y, w, h, buf);
+        pancakeTFT->readRectRGB(x, y, w, h, buf);
     }
     int  width()      { return PANCAKE_SCREEN_W; }
     int  height()     { return PANCAKE_PORK_H; }
-    void startWrite() { pancakeTFT.startWrite(); }
-    void endWrite()   { pancakeTFT.endWrite(); }
+    void startWrite() { pancakeTFT->startWrite(); }
+    void endWrite()   { pancakeTFT->endWrite(); }
 };
 
 // ---- IMU stub ----------------------------------------------
@@ -268,29 +268,29 @@ struct M5Cardputer_Class {
         pinMode(PANCAKE_TFT_BL, OUTPUT);
         analogWrite(PANCAKE_TFT_BL, 0);
 
-        Serial.println("[HAL] Calling pancakeTFT.init()...");
+        Serial.println("[HAL] Calling pancakeTFT->init()...");
         Serial.flush();
-        pancakeTFT.init();
-        Serial.println("[HAL] pancakeTFT.init() done");
+        pancakeTFT->init();
+        Serial.println("[HAL] pancakeTFT->init() done");
         Serial.flush();
 
-        pancakeTFT.setRotation(PANCAKE_ROTATION);
-        pancakeTFT.fillScreen(TFT_BLACK);
+        pancakeTFT->setRotation(PANCAKE_ROTATION);
+        pancakeTFT->fillScreen(TFT_BLACK);
 
         // Now turn on backlight — display is ready
         analogWrite(PANCAKE_TFT_BL, 255);
         Serial.println("[HAL] TFT init complete, BL on");
         Serial.flush();
 
-        if (!pancakeTouch.begin()) {
+        if (!pancakeTouch->begin()) {
             Serial.println("[PANCAKE] FT6336 not found");
         }
 
-        pancakeKeyboard.begin(&pancakeTFT, &pancakeTouch);
-        pancakeKeyboard.redraw();
+        pancakeKeyboard->begin(&pancakeTFT, &pancakeTouch);
+        pancakeKeyboard->redraw();
 
-        pancakeTFT.drawFastHLine(0, PANCAKE_KB_Y - 1, PANCAKE_SCREEN_W, 0x528A);
-        pancakeTFT.drawFastHLine(0, PANCAKE_KB_Y,     PANCAKE_SCREEN_W, 0x528A);
+        pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y - 1, PANCAKE_SCREEN_W, 0x528A);
+        pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y,     PANCAKE_SCREEN_W, 0x528A);
 
         // SD card: TFT_eSPI already called SPI.begin() with the TFT pins.
         // SD.begin() with the same SPI instance works because TFT_eSPI uses
@@ -324,8 +324,11 @@ struct M5Unified_Class {
 };
 
 // ---- Global instances (defined in pancake_hal.cpp) ---------
-extern M5Cardputer_Class M5Cardputer;
-extern M5Unified_Class   M5;
+extern M5Cardputer_Class* pancakeM5Cardputer;
+extern M5Unified_Class*   pancakeM5;
+// Dereference macros so existing code using M5Cardputer.x and M5.x still works
+#define M5Cardputer (*pancakeM5Cardputer)
+#define M5          (*pancakeM5)
 
 // ---- neopixelWrite pin remap --------------------------------
 #include <esp32-hal-rgb-led.h>
@@ -335,6 +338,7 @@ extern M5Unified_Class   M5;
 #define LED_PIN PANCAKE_LED_PIN
 
 // ---- Keyboard redraw helper --------------------------------
+void pancakeHalInit();        // Call from setup() before M5Cardputer.begin()
 void pancakeRedrawKeyboard();
 
 #endif // PORKCHOP_PANCAKE

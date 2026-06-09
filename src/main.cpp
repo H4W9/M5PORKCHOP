@@ -101,6 +101,11 @@ void setup() {
 
     // Init hardware
 #ifdef PORKCHOP_PANCAKE
+    // Construct all HAL objects on the heap now that setup() is running
+    // and the IDF heap is fully initialized. This avoids static-init crashes
+    // caused by the MSPI timing barrier consuming heap before __init_array.
+    pancakeHalInit();
+
     // Pancake: M5Cardputer.begin() initialises TFT, touch, keyboard, and SD.
     Serial.println("[BOOT] Calling M5Cardputer.begin()...");
     Serial.flush();

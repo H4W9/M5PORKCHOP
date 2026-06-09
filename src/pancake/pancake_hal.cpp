@@ -1,25 +1,26 @@
 // pancake_hal.cpp
 // Definitions for all Pancake HAL globals.
-// This file is compiled exactly once, giving one definition to all
-// the extern declarations in pancake_hal_impl.h.
+// All hardware objects are heap-allocated in pancakeHalInit() which must be
+// called from setup() before any HAL use. This avoids static-init crashes on
+// ESP32-C5 where the MSPI timing code consumes heap before __init_array runs.
 
 #ifdef PORKCHOP_PANCAKE
 
 #include "pancake_hal_impl.h"
 
-// ---- Hardware object instances -----------------------------
-// init_priority(101) ensures these construct before any translation unit's
-// globals that use default priority (65535), including Display::topBar etc.
-// in display.cpp whose M5Canvas constructors take &pancakeTFT as argument.
-FT6336Touch     pancakeTouch     __attribute__((init_priority(101)));
-PancakeKeyboard pancakeKeyboard  __attribute__((init_priority(101)));
-TFT_eSPI        pancakeTFT       __attribute__((init_priority(101)));
+// ---- Hardware object pointers (null until pancakeHalInit()) ----------------
+FT6336Touch*     pancakeTouch    = nullptr;
+PancakeKeyboard* pancakeKeyboard = nullptr;
+TFT_eSPI*        pancakeTFT      = nullptr;
 
-// ---- Top-level M5 object instances -------------------------
-M5Cardputer_Class M5Cardputer    __attribute__((init_priority(102)));
-M5Unified_Class   M5             __attribute__((init_priority(102)));
+// ---- Top-level M5 object pointers ------------------------------------------
+M5Cardputer_Class* pancakeM5Cardputer = nullptr;
+M5Unified_Class*   pancakeM5          = nullptr;
 
-// ---- PancakeKB state ---------------------------------------
+// ---- Convenience references exposed via macros in pancake_hal_impl.h -------
+// (M5Cardputer and M5 are #defined to dereference these pointers)
+
+// ---- PancakeKB state --------------------------------------------------------
 namespace PancakeKB {
     bool    _changed  = false;
     bool    _pressed  = false;
@@ -30,7 +31,7 @@ namespace PancakeKB {
     void resetPollFlag() { _polled = false; }
 
     void poll() {
-        if (_polled) return;
+        if (_polled || !pancakeKeyboard) return;
         _polled  = true;
         _changed = false;
         _pressed = false;
@@ -38,7 +39,7 @@ namespace PancakeKB {
         _sp = PKEY_NONE;
         char ch = 0;
         uint8_t sp = PKEY_NONE;
-        if (pancakeKeyboard.poll(ch, sp)) {
+        if (pancakeKeyboard->poll(ch, sp)) {
             _changed = true;
             _pressed = true;
             _ch = ch;
@@ -78,11 +79,21 @@ namespace PancakeKB {
     }
 }  // namespace PancakeKB
 
-// ---- Keyboard redraw helper --------------------------------
+// ---- Keyboard redraw helper -------------------------------------------------
 void pancakeRedrawKeyboard() {
-    pancakeTFT.drawFastHLine(0, PANCAKE_KB_Y - 1, PANCAKE_SCREEN_W, 0x528A);
-    pancakeTFT.drawFastHLine(0, PANCAKE_KB_Y,     PANCAKE_SCREEN_W, 0x528A);
-    pancakeKeyboard.redraw();
+    if (!pancakeTFT || !pancakeKeyboard) return;
+    pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y - 1, PANCAKE_SCREEN_W, 0x528A);
+    pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y,     PANCAKE_SCREEN_W, 0x528A);
+    pancakeKeyboard->redraw();
+}
+
+// ---- One-time hardware init — call from setup() BEFORE M5Cardputer.begin() -
+void pancakeHalInit() {
+    pancakeTFT      = new TFT_eSPI();
+    pancakeTouch    = new FT6336Touch();
+    pancakeKeyboard = new PancakeKeyboard();
+    pancakeM5Cardputer = new M5Cardputer_Class();
+    pancakeM5          = new M5Unified_Class();
 }
 
 #endif // PORKCHOP_PANCAKE
