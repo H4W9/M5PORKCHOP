@@ -160,9 +160,9 @@ static void drawTopBarHeapHealth(M5Canvas& topBar) {
 }
 
 // Static member initialization
-M5Canvas Display::topBar(&M5.Display);
-M5Canvas Display::mainCanvas(&M5.Display);
-M5Canvas Display::bottomBar(&M5.Display);
+M5Canvas* Display::topBar = nullptr;
+M5Canvas* Display::mainCanvas = nullptr;
+M5Canvas* Display::bottomBar = nullptr;
 bool Display::gpsStatus = false;
 bool Display::wifiStatus = false;
 bool Display::mlStatus = false;
@@ -210,13 +210,19 @@ void Display::init() {
     // TFT_eSPI doesn't have setColorDepth() — color depth is compile-time only.
     pancakeTFT.fillRect(0, 0, DISPLAY_W, DISPLAY_H, COLOR_BG);
 
-    topBar.createSprite(DISPLAY_W, TOP_BAR_H);
-    mainCanvas.createSprite(DISPLAY_W, MAIN_H);
-    bottomBar.createSprite(DISPLAY_W, BOTTOM_BAR_H);
+    // Construct canvas objects here (not at global scope) so TFT_eSprite
+    // constructors run after the heap and hardware are fully initialized.
+    topBar     = new M5Canvas(&M5.Display);
+    mainCanvas = new M5Canvas(&M5.Display);
+    bottomBar  = new M5Canvas(&M5.Display);
 
-    topBar.setTextSize(1);
-    mainCanvas.setTextSize(1);
-    bottomBar.setTextSize(1);
+    topBar->createSprite(DISPLAY_W, TOP_BAR_H);
+    mainCanvas->createSprite(DISPLAY_W, MAIN_H);
+    bottomBar->createSprite(DISPLAY_W, BOTTOM_BAR_H);
+
+    topBar->setTextSize(1);
+    mainCanvas->setTextSize(1);
+    bottomBar->setTextSize(1);
 
     lastActivityTime = millis();
     dimmed = false;
@@ -234,19 +240,23 @@ void Display::init() {
     M5.Display.fillScreen(COLOR_BG);
     M5.Display.setTextColor(COLOR_FG);
     
-    // Create canvas sprites - then explicitly set them to 8-bit RGB332
-    topBar.createSprite(DISPLAY_W, TOP_BAR_H);
-    topBar.setColorDepth(8);
+    // Construct canvas sprites here (not at global scope)
+    topBar     = new M5Canvas(&M5.Display);
+    mainCanvas = new M5Canvas(&M5.Display);
+    bottomBar  = new M5Canvas(&M5.Display);
+
+    topBar->createSprite(DISPLAY_W, TOP_BAR_H);
+    topBar->setColorDepth(8);
     
-    mainCanvas.createSprite(DISPLAY_W, MAIN_H);
-    mainCanvas.setColorDepth(8);
+    mainCanvas->createSprite(DISPLAY_W, MAIN_H);
+    mainCanvas->setColorDepth(8);
     
-    bottomBar.createSprite(DISPLAY_W, BOTTOM_BAR_H);
-    bottomBar.setColorDepth(8);
+    bottomBar->createSprite(DISPLAY_W, BOTTOM_BAR_H);
+    bottomBar->setColorDepth(8);
     
-    topBar.setTextSize(1);
-    mainCanvas.setTextSize(1);
-    bottomBar.setTextSize(1);
+    topBar->setTextSize(1);
+    mainCanvas->setTextSize(1);
+    bottomBar->setTextSize(1);
     
     // Initialize dimming state
     lastActivityTime = millis();
@@ -307,10 +317,10 @@ void Display::update() {
     } else {
         Avatar::setThunderFlash(false);
     }
-    mainCanvas.fillSprite(bgColor);
-    mainCanvas.setTextColor(COLOR_FG);
-    mainCanvas.setTextDatum(TL_DATUM);  // Reset to top-left
-    mainCanvas.setFont(&fonts::Font0);  // Reset to default font
+    mainCanvas->fillSprite(bgColor);
+    mainCanvas->setTextColor(COLOR_FG);
+    mainCanvas->setTextDatum(TL_DATUM);  // Reset to top-left
+    mainCanvas->setFont(&fonts::Font0);  // Reset to default font
     
     switch (mode) {
         case PorkchopMode::IDLE:
@@ -433,14 +443,14 @@ void Display::update() {
         int boxY = (MAIN_H - boxH) / 2;
 
         // Black border then pink fill
-        mainCanvas.fillRoundRect(boxX - 2, boxY - 2, boxW + 4, boxH + 4, 8, COLOR_BG);
-        mainCanvas.fillRoundRect(boxX, boxY, boxW, boxH, 8, COLOR_FG);
+        mainCanvas->fillRoundRect(boxX - 2, boxY - 2, boxW + 4, boxH + 4, 8, COLOR_BG);
+        mainCanvas->fillRoundRect(boxX, boxY, boxW, boxH, 8, COLOR_FG);
 
         // Black text on pink background
-        mainCanvas.setTextColor(COLOR_BG, COLOR_FG);
-        mainCanvas.setTextSize(1);
-        mainCanvas.setFont(&fonts::Font0);
-        mainCanvas.setTextDatum(TC_DATUM);
+        mainCanvas->setTextColor(COLOR_BG, COLOR_FG);
+        mainCanvas->setTextSize(1);
+        mainCanvas->setFont(&fonts::Font0);
+        mainCanvas->setTextDatum(TC_DATUM);
 
         // Draw each line centered
         char buf[128];
@@ -452,12 +462,12 @@ void Display::update() {
             int y = boxY + 6;
             char* line = strtok(buf, "\n");
             while (line) {
-                mainCanvas.drawString(line, DISPLAY_W / 2, y);
+                mainCanvas->drawString(line, DISPLAY_W / 2, y);
                 y += lineH;
                 line = strtok(nullptr, "\n");
             }
         }
-        mainCanvas.setTextDatum(TL_DATUM);
+        mainCanvas->setTextDatum(TL_DATUM);
     } else if (toastActive) {
         // Toast has expired, mark it as inactive
         toastActive = false;
@@ -480,17 +490,17 @@ void Display::requestTopBarMessage(const char* message, uint32_t durationMs) {
 }
 
 void Display::clear() {
-    topBar.fillSprite(COLOR_BG);
-    mainCanvas.fillSprite(COLOR_BG);
-    bottomBar.fillSprite(COLOR_BG);
+    topBar->fillSprite(COLOR_BG);
+    mainCanvas->fillSprite(COLOR_BG);
+    bottomBar->fillSprite(COLOR_BG);
     pushAll();
 }
 
 void Display::pushAll() {
     M5.Display.startWrite();
-    topBar.pushSprite(0, 0);
-    mainCanvas.pushSprite(0, TOP_BAR_H);
-    bottomBar.pushSprite(0, DISPLAY_H - BOTTOM_BAR_H);
+    topBar->pushSprite(0, 0);
+    mainCanvas->pushSprite(0, TOP_BAR_H);
+    bottomBar->pushSprite(0, DISPLAY_H - BOTTOM_BAR_H);
     M5.Display.endWrite();
 
 #ifdef PORKCHOP_PANCAKE
@@ -514,7 +524,7 @@ void Display::drawTopBar() {
             topBarMessage[0] = '\0';
         } else if (strchr(topBarMessage, '\n')) {
             topBarMessageTwoLineActive = true;
-            topBar.fillSprite(COLOR_FG);
+            topBar->fillSprite(COLOR_FG);
             return;
         }
     }
@@ -527,15 +537,15 @@ void Display::drawTopBar() {
 
     // Check for heap health notification (same style as XP)
     if (HeapHealth::shouldShowToast()) {
-        drawTopBarHeapHealth(topBar);
+        drawTopBarHeapHealth(*topBar);
         return;
     }
 
     // Check for upload progress, show during upload operations
     if (shouldShowUploadProgress()) {
         // Draw upload progress in top bar
-        topBar.fillSprite(COLOR_FG);  // Inverted background
-        drawUploadProgress(topBar);
+        topBar->fillSprite(COLOR_FG);  // Inverted background
+        drawUploadProgress(*topBar);
         return;
     }
 
@@ -544,30 +554,30 @@ void Display::drawTopBar() {
         if (topBarMessageDuration > 0 && (millis() - topBarMessageStart) > topBarMessageDuration) {
             topBarMessage[0] = '\0';
         } else {
-            topBar.fillSprite(COLOR_FG);
-            topBar.setTextColor(COLOR_BG);
-            topBar.setTextSize(1);
-            topBar.setTextDatum(top_left);
+            topBar->fillSprite(COLOR_FG);
+            topBar->setTextColor(COLOR_BG);
+            topBar->setTextSize(1);
+            topBar->setTextDatum(top_left);
             char msgBuf[96];
             strncpy(msgBuf, topBarMessage, sizeof(msgBuf) - 1);
             msgBuf[sizeof(msgBuf) - 1] = '\0';
             size_t len = strlen(msgBuf);
             int maxWidth = DISPLAY_W - 4;
-            while (topBar.textWidth(msgBuf) > maxWidth && len > 3) {
+            while (topBar->textWidth(msgBuf) > maxWidth && len > 3) {
                 msgBuf[--len] = '\0';
             }
-            if (topBar.textWidth(msgBuf) > maxWidth && len > 2) {
+            if (topBar->textWidth(msgBuf) > maxWidth && len > 2) {
                 msgBuf[len - 2] = '.';
                 msgBuf[len - 1] = '.';
             }
-            topBar.drawString(msgBuf, 2, 3);
+            topBar->drawString(msgBuf, 2, 3);
             return;
         }
     }
 
-    topBar.fillSprite(COLOR_BG);
-    topBar.setTextColor(COLOR_FG);
-    topBar.setTextSize(1);
+    topBar->fillSprite(COLOR_BG);
+    topBar->setTextColor(COLOR_FG);
+    topBar->setTextSize(1);
     
     // Left side: mode indicator
     PorkchopMode mode = porkchop->getMode();
@@ -711,7 +721,7 @@ void Display::drawTopBar() {
     statusBuf[3] = '\0';
     char rightBuf[32];
     snprintf(rightBuf, sizeof(rightBuf), "%d%% %s %s", battLevel, statusBuf, timeBuf);
-    int rightWidth = topBar.textWidth(rightBuf);
+    int rightWidth = topBar->textWidth(rightBuf);
     
     // Truncate left string if it would overlap right side
     int maxLeftWidth = DISPLAY_W - rightWidth - 8;  // 8px margin
@@ -719,22 +729,22 @@ void Display::drawTopBar() {
     strncpy(leftBuf, finalModeBuf, sizeof(leftBuf) - 1);
     leftBuf[sizeof(leftBuf) - 1] = '\0';
     size_t leftLen = strlen(leftBuf);
-    while (topBar.textWidth(leftBuf) > maxLeftWidth && leftLen > 10) {
+    while (topBar->textWidth(leftBuf) > maxLeftWidth && leftLen > 10) {
         leftBuf[--leftLen] = '\0';
     }
-    if (topBar.textWidth(leftBuf) > maxLeftWidth && leftLen > 3) {
+    if (topBar->textWidth(leftBuf) > maxLeftWidth && leftLen > 3) {
         leftBuf[leftLen - 2] = '.';
         leftBuf[leftLen - 1] = '.';
     }
     
-    topBar.setTextColor(modeColor);
-    topBar.setTextDatum(top_left);
-    topBar.drawString(leftBuf, 2, 2);
+    topBar->setTextColor(modeColor);
+    topBar->setTextDatum(top_left);
+    topBar->drawString(leftBuf, 2, 2);
 
     // Right side: battery + status icons
-    topBar.setTextColor(COLOR_FG);
-    topBar.setTextDatum(top_right);
-    topBar.drawString(rightBuf, DISPLAY_W - 2, 2);
+    topBar->setTextColor(COLOR_FG);
+    topBar->setTextDatum(top_right);
+    topBar->drawString(rightBuf, DISPLAY_W - 2, 2);
 }
 
 void Display::drawTopBarMessageTwoLineDirect() {
@@ -759,16 +769,16 @@ void Display::drawTopBarMessageTwoLineDirect() {
     memcpy(line2Buf, line2Start, len2);
     line2Buf[len2] = '\0';
 
-    topBar.setTextSize(1);
-    topBar.setFont(&fonts::Font0);
+    topBar->setTextSize(1);
+    topBar->setFont(&fonts::Font0);
     int maxWidth = DISPLAY_W - 4;
 
     auto truncateLine = [&](char* line) {
         size_t len = strlen(line);
-        while (topBar.textWidth(line) > maxWidth && len > 3) {
+        while (topBar->textWidth(line) > maxWidth && len > 3) {
             line[--len] = '\0';
         }
-        if (topBar.textWidth(line) > maxWidth && len > 2) {
+        if (topBar->textWidth(line) > maxWidth && len > 2) {
             line[len - 2] = '.';
             line[len - 1] = '.';
         }
@@ -804,19 +814,19 @@ void Display::drawBottomBar() {
 
     // Set colors based on mode - PIGSYNC_DEVICE_SELECT uses normal colors, others use inverted
     if (mode == PorkchopMode::PIGSYNC_DEVICE_SELECT) {
-        bottomBar.fillSprite(COLOR_BG);  // Normal BG background
-        bottomBar.setTextColor(COLOR_FG);  // Normal FG text
+        bottomBar->fillSprite(COLOR_BG);  // Normal BG background
+        bottomBar->setTextColor(COLOR_FG);  // Normal FG text
     } else {
-        bottomBar.fillSprite(COLOR_FG);  // Inverted: FG background
-        bottomBar.setTextColor(COLOR_BG);  // Inverted: BG text
+        bottomBar->fillSprite(COLOR_FG);  // Inverted: FG background
+        bottomBar->setTextColor(COLOR_BG);  // Inverted: BG text
     }
-    bottomBar.setTextSize(1);
-    bottomBar.setTextDatum(top_left);
+    bottomBar->setTextSize(1);
+    bottomBar->setTextDatum(top_left);
 
     // Check for overlay message, used during confirmation dialogs
     if (bottomOverlay[0] != '\0') {
-        bottomBar.setTextDatum(top_center);
-        bottomBar.drawString(bottomOverlay, DISPLAY_W / 2, 3);
+        bottomBar->setTextDatum(top_center);
+        bottomBar->drawString(bottomOverlay, DISPLAY_W / 2, 3);
         return;
     }
     char statsBuf[96];
@@ -986,7 +996,7 @@ void Display::drawBottomBar() {
         showHealthBar = true;
     }
 
-    bottomBar.drawString(statsStr ? statsStr : "", 2, 3);
+    bottomBar->drawString(statsStr ? statsStr : "", 2, 3);
 
     // Center: Heap health bar (XP-style, inverted)
     if (showHealthBar) {
@@ -1004,25 +1014,25 @@ void Display::drawBottomBar() {
         int heartY = 3;
         drawHeartIcon(bottomBar, heartX, heartY, COLOR_BG);
 
-        bottomBar.drawRect(barX, barY, barW, barH, COLOR_BG);
+        bottomBar->drawRect(barX, barY, barW, barH, COLOR_BG);
         int fillW = (barW - 2) * pct / 100;
         if (fillW > 0) {
-            bottomBar.fillRect(barX + 1, barY + 1, fillW, barH - 2, COLOR_BG);
+            bottomBar->fillRect(barX + 1, barY + 1, fillW, barH - 2, COLOR_BG);
         }
 
         char pctBuf[8];
         snprintf(pctBuf, sizeof(pctBuf), "%3d%%", pct);
-        bottomBar.setTextDatum(top_left);
-        bottomBar.drawString(pctBuf, barX + barW + gap, 3);
+        bottomBar->setTextDatum(top_left);
+        bottomBar->drawString(pctBuf, barX + barW + gap, 3);
     }
     
     // Right: uptime or PIGSYNC channel
-    bottomBar.setTextDatum(top_right);
+    bottomBar->setTextDatum(top_right);
     if (mode == PorkchopMode::PIGSYNC_DEVICE_SELECT) {
         char chBuf[12];
         uint8_t ch = PigSyncMode::getDataChannel();
         snprintf(chBuf, sizeof(chBuf), "CH:%02d", ch);
-        bottomBar.drawString(chBuf, DISPLAY_W - 2, 3);
+        bottomBar->drawString(chBuf, DISPLAY_W - 2, 3);
     } else if (mode == PorkchopMode::MENU ||
                mode == PorkchopMode::SETTINGS ||
                mode == PorkchopMode::CAPTURES ||
@@ -1046,32 +1056,32 @@ void Display::drawBottomBar() {
         uint16_t secs = uptime % 60;
         char uptimeBuf[12];
         snprintf(uptimeBuf, sizeof(uptimeBuf), "%u:%02u", mins, secs);
-        bottomBar.drawString(uptimeBuf, DISPLAY_W - 2, 3);
+        bottomBar->drawString(uptimeBuf, DISPLAY_W - 2, 3);
     }
 }
 
 void Display::showInfoBox(const String& title, const String& line1, 
                           const String& line2, bool blocking) {
-    mainCanvas.fillSprite(COLOR_BG);
-    mainCanvas.setTextColor(COLOR_FG);
+    mainCanvas->fillSprite(COLOR_BG);
+    mainCanvas->setTextColor(COLOR_FG);
     
     // Draw border
-    mainCanvas.drawRect(10, 5, DISPLAY_W - 20, MAIN_H - 10, COLOR_FG);
+    mainCanvas->drawRect(10, 5, DISPLAY_W - 20, MAIN_H - 10, COLOR_FG);
     
     // Title
-    mainCanvas.setTextDatum(top_center);
-    mainCanvas.setTextSize(2);
-    mainCanvas.drawString(title, DISPLAY_W / 2, 15);
+    mainCanvas->setTextDatum(top_center);
+    mainCanvas->setTextSize(2);
+    mainCanvas->drawString(title, DISPLAY_W / 2, 15);
     
     // Content
-    mainCanvas.setTextSize(1);
-    mainCanvas.drawString(line1, DISPLAY_W / 2, 45);
+    mainCanvas->setTextSize(1);
+    mainCanvas->drawString(line1, DISPLAY_W / 2, 45);
     if (line2.length() > 0) {
-        mainCanvas.drawString(line2, DISPLAY_W / 2, 60);
+        mainCanvas->drawString(line2, DISPLAY_W / 2, 60);
     }
     
     if (blocking) {
-        mainCanvas.drawString("[ENTER to continue]", DISPLAY_W / 2, MAIN_H - 20);
+        mainCanvas->drawString("[ENTER to continue]", DISPLAY_W / 2, MAIN_H - 20);
     }
     
     pushAll();
@@ -1095,18 +1105,18 @@ void Display::showInfoBox(const String& title, const String& line1,
 }
 
 bool Display::showConfirmBox(const String& title, const String& message) {
-    mainCanvas.fillSprite(COLOR_BG);
-    mainCanvas.setTextColor(COLOR_FG);
+    mainCanvas->fillSprite(COLOR_BG);
+    mainCanvas->setTextColor(COLOR_FG);
     
-    mainCanvas.drawRect(10, 5, DISPLAY_W - 20, MAIN_H - 10, COLOR_FG);
+    mainCanvas->drawRect(10, 5, DISPLAY_W - 20, MAIN_H - 10, COLOR_FG);
     
-    mainCanvas.setTextDatum(top_center);
-    mainCanvas.setTextSize(2);
-    mainCanvas.drawString(title, DISPLAY_W / 2, 15);
+    mainCanvas->setTextDatum(top_center);
+    mainCanvas->setTextSize(2);
+    mainCanvas->drawString(title, DISPLAY_W / 2, 15);
     
-    mainCanvas.setTextSize(1);
-    mainCanvas.drawString(message, DISPLAY_W / 2, 45);
-    mainCanvas.drawString("[Y]ES / [N]O", DISPLAY_W / 2, MAIN_H - 20);
+    mainCanvas->setTextSize(1);
+    mainCanvas->drawString(message, DISPLAY_W / 2, 45);
+    mainCanvas->drawString("[Y]ES / [N]O", DISPLAY_W / 2, MAIN_H - 20);
     
     pushAll();
     
@@ -1139,17 +1149,17 @@ void Display::showChallenges() {
         return;
     }
     
-    mainCanvas.fillSprite(COLOR_BG);
-    mainCanvas.setTextColor(COLOR_FG);
-    mainCanvas.setFont(&fonts::Font0);
+    mainCanvas->fillSprite(COLOR_BG);
+    mainCanvas->setTextColor(COLOR_FG);
+    mainCanvas->setFont(&fonts::Font0);
     
     // Title - pig personality
-    mainCanvas.setTextDatum(TC_DATUM);
-    mainCanvas.setTextSize(2);
-    mainCanvas.drawString("P1G D3MANDS", DISPLAY_W / 2, 2);
+    mainCanvas->setTextDatum(TC_DATUM);
+    mainCanvas->setTextSize(2);
+    mainCanvas->drawString("P1G D3MANDS", DISPLAY_W / 2, 2);
     
     // Divider line
-    mainCanvas.drawLine(20, 20, DISPLAY_W - 20, 20, COLOR_FG);
+    mainCanvas->drawLine(20, 20, DISPLAY_W - 20, 20, COLOR_FG);
     
     // Challenge lines
     int y = 26;
@@ -1192,12 +1202,12 @@ void Display::showChallenges() {
         }
         
         // Draw status + difficulty + name
-        mainCanvas.setTextSize(1);
-        mainCanvas.setTextDatum(TL_DATUM);
+        mainCanvas->setTextSize(1);
+        mainCanvas->setTextDatum(TL_DATUM);
         
         char lineBuf[32];
         snprintf(lineBuf, sizeof(lineBuf), "%s %c %s", statusBox, diffLetter, nameBuf);
-        mainCanvas.drawString(lineBuf, 4, y + 2);
+        mainCanvas->drawString(lineBuf, 4, y + 2);
         
         // Progress fraction or status word (right of name, before XP)
         char progBuf[12];
@@ -1208,14 +1218,14 @@ void Display::showChallenges() {
         } else {
             snprintf(progBuf, sizeof(progBuf), "%d/%d", ch.progress, ch.target);
         }
-        mainCanvas.drawString(progBuf, 150, y + 2);
+        mainCanvas->drawString(progBuf, 150, y + 2);
         
         // XP reward (right aligned)
         char xpBuf[8];
         snprintf(xpBuf, sizeof(xpBuf), "+%d", ch.xpReward);
-        mainCanvas.setTextDatum(TR_DATUM);
-        mainCanvas.drawString(xpBuf, DISPLAY_W - 6, y + 2);
-        mainCanvas.setTextDatum(TL_DATUM);
+        mainCanvas->setTextDatum(TR_DATUM);
+        mainCanvas->drawString(xpBuf, DISPLAY_W - 6, y + 2);
+        mainCanvas->setTextDatum(TL_DATUM);
         
         totalXP += ch.xpReward;
         y += lineH;
@@ -1223,10 +1233,10 @@ void Display::showChallenges() {
     
     // Footer - total XP
     y += 4;
-    mainCanvas.setTextDatum(TC_DATUM);
+    mainCanvas->setTextDatum(TC_DATUM);
     char footerBuf[32];
     snprintf(footerBuf, sizeof(footerBuf), "TOTAL: +%d XP", totalXP);
-    mainCanvas.drawString(footerBuf, DISPLAY_W / 2, y);
+    mainCanvas->drawString(footerBuf, DISPLAY_W / 2, y);
     
     pushAll();
     
@@ -1356,12 +1366,12 @@ void Display::showProgress(const String& title, uint8_t percent) {
 }
 
 void Display::showProgress(const char* title, uint8_t percent) {
-    mainCanvas.fillSprite(COLOR_BG);
-    mainCanvas.setTextColor(COLOR_FG);
+    mainCanvas->fillSprite(COLOR_BG);
+    mainCanvas->setTextColor(COLOR_FG);
 
-    mainCanvas.setTextDatum(top_center);
-    mainCanvas.setTextSize(2);
-    mainCanvas.drawString(title ? title : "", DISPLAY_W / 2, 20);
+    mainCanvas->setTextDatum(top_center);
+    mainCanvas->setTextSize(2);
+    mainCanvas->drawString(title ? title : "", DISPLAY_W / 2, 20);
 
     // Progress bar
     int barW = DISPLAY_W - 40;
@@ -1369,15 +1379,15 @@ void Display::showProgress(const char* title, uint8_t percent) {
     int barX = 20;
     int barY = MAIN_H / 2;
 
-    mainCanvas.drawRect(barX, barY, barW, barH, COLOR_FG);
+    mainCanvas->drawRect(barX, barY, barW, barH, COLOR_FG);
     int fillW = (barW - 2) * percent / 100;
-    mainCanvas.fillRect(barX + 1, barY + 1, fillW, barH - 2, COLOR_ACCENT);
+    mainCanvas->fillRect(barX + 1, barY + 1, fillW, barH - 2, COLOR_ACCENT);
 
     // Percentage text
-    mainCanvas.setTextSize(1);
+    mainCanvas->setTextSize(1);
     char percentBuf[8];
     snprintf(percentBuf, sizeof(percentBuf), "%u%%", percent);
-    mainCanvas.drawString(percentBuf, DISPLAY_W / 2, barY + barH + 10);
+    mainCanvas->drawString(percentBuf, DISPLAY_W / 2, barY + barH + 10);
 
     pushAll();
 }
@@ -1524,35 +1534,35 @@ void Display::showLevelUp(uint8_t oldLevel, uint8_t newLevel) {
     int boxX = (DISPLAY_W - boxW) / 2;
     int boxY = (MAIN_H - boxH) / 2;
     
-    mainCanvas.fillSprite(COLOR_BG);
+    mainCanvas->fillSprite(COLOR_BG);
     
     // Black border then pink fill
-    mainCanvas.fillRoundRect(boxX - 2, boxY - 2, boxW + 4, boxH + 4, 8, COLOR_BG);
-    mainCanvas.fillRoundRect(boxX, boxY, boxW, boxH, 8, COLOR_FG);
+    mainCanvas->fillRoundRect(boxX - 2, boxY - 2, boxW + 4, boxH + 4, 8, COLOR_BG);
+    mainCanvas->fillRoundRect(boxX, boxY, boxW, boxH, 8, COLOR_FG);
     
     // Black text on pink background
-    mainCanvas.setTextColor(COLOR_BG, COLOR_FG);
-    mainCanvas.setTextDatum(top_center);
-    mainCanvas.setTextSize(1);
-    mainCanvas.setFont(&fonts::Font0);
+    mainCanvas->setTextColor(COLOR_BG, COLOR_FG);
+    mainCanvas->setTextDatum(top_center);
+    mainCanvas->setTextSize(1);
+    mainCanvas->setFont(&fonts::Font0);
     
     int centerX = DISPLAY_W / 2;
     
     // Header
-    mainCanvas.drawString("* LEVEL UP! *", centerX, boxY + 8);
+    mainCanvas->drawString("* LEVEL UP! *", centerX, boxY + 8);
     
     // Level change
     char levelStr[24];
     snprintf(levelStr, sizeof(levelStr), "LV %d -> LV %d", oldLevel, newLevel);
-    mainCanvas.drawString(levelStr, centerX, boxY + 22);
+    mainCanvas->drawString(levelStr, centerX, boxY + 22);
     
     // New title
     const char* title = XP::getTitleForLevel(newLevel);
-    mainCanvas.drawString(title, centerX, boxY + 36);
+    mainCanvas->drawString(title, centerX, boxY + 36);
     
     // Random phrase
     int phraseIdx = random(0, PHRASE_COUNT);
-    mainCanvas.drawString(LEVELUP_PHRASES[phraseIdx], centerX, boxY + 52);
+    mainCanvas->drawString(LEVELUP_PHRASES[phraseIdx], centerX, boxY + 52);
     
     pushAll();
     
@@ -1590,31 +1600,31 @@ void Display::showClassPromotion(const char* oldClass, const char* newClass) {
     int boxX = (DISPLAY_W - boxW) / 2;
     int boxY = (MAIN_H - boxH) / 2;
     
-    mainCanvas.fillSprite(COLOR_BG);
+    mainCanvas->fillSprite(COLOR_BG);
     
     // Black border then pink fill
-    mainCanvas.fillRoundRect(boxX - 2, boxY - 2, boxW + 4, boxH + 4, 8, COLOR_BG);
-    mainCanvas.fillRoundRect(boxX, boxY, boxW, boxH, 8, COLOR_FG);
+    mainCanvas->fillRoundRect(boxX - 2, boxY - 2, boxW + 4, boxH + 4, 8, COLOR_BG);
+    mainCanvas->fillRoundRect(boxX, boxY, boxW, boxH, 8, COLOR_FG);
     
     // Black text on pink background
-    mainCanvas.setTextColor(COLOR_BG, COLOR_FG);
-    mainCanvas.setTextDatum(top_center);
-    mainCanvas.setTextSize(1);
-    mainCanvas.setFont(&fonts::Font0);
+    mainCanvas->setTextColor(COLOR_BG, COLOR_FG);
+    mainCanvas->setTextDatum(top_center);
+    mainCanvas->setTextSize(1);
+    mainCanvas->setFont(&fonts::Font0);
     
     int centerX = DISPLAY_W / 2;
     
     // Header
-    mainCanvas.drawString("* CL4SS PR0M0T10N *", centerX, boxY + 8);
+    mainCanvas->drawString("* CL4SS PR0M0T10N *", centerX, boxY + 8);
     
     // Class change
     char classStr[48];
     snprintf(classStr, sizeof(classStr), "%s -> %s", oldClass, newClass);
-    mainCanvas.drawString(classStr, centerX, boxY + 24);
+    mainCanvas->drawString(classStr, centerX, boxY + 24);
     
     // Random phrase
     int phraseIdx = random(0, PHRASE_COUNT);
-    mainCanvas.drawString(CLASS_PHRASES[phraseIdx], centerX, boxY + 40);
+    mainCanvas->drawString(CLASS_PHRASES[phraseIdx], centerX, boxY + 40);
     
     pushAll();
     

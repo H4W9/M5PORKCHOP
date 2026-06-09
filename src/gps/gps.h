@@ -44,7 +44,7 @@ public:
     static uint32_t getLastFixTime();
     
 private:
-    static TinyGPSPlus gps;
+    static TinyGPSPlus* gps;
     static HardwareSerial* serial;
     static bool active;
     static GPSData currentData;

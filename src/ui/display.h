@@ -94,9 +94,9 @@ public:
     static void requestTopBarMessage(const char* message, uint32_t durationMs = 0);
 
     // Canvas access for direct drawing
-    static M5Canvas& getTopBar() { return topBar; }
-    static M5Canvas& getMain() { return mainCanvas; }
-    static M5Canvas& getBottomBar() { return bottomBar; }
+    static M5Canvas& getTopBar() { return *topBar; }
+    static M5Canvas& getMain() { return *mainCanvas; }
+    static M5Canvas& getBottomBar() { return *bottomBar; }
     
     // Helper functions
     static void pushAll();
@@ -145,9 +145,9 @@ public:
     static bool isSnapping() { return snapping; }  // True during screenshot save
     
 private:
-    static M5Canvas topBar;
-    static M5Canvas mainCanvas;
-    static M5Canvas bottomBar;
+    static M5Canvas* topBar;
+    static M5Canvas* mainCanvas;
+    static M5Canvas* bottomBar;
     
     static bool gpsStatus;
     static bool wifiStatus;

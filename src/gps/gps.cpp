@@ -7,7 +7,7 @@
 #include "../ui/display.h"
 
 // Static members
-TinyGPSPlus GPS::gps;
+TinyGPSPlus* GPS::gps = nullptr;
 HardwareSerial* GPS::serial = nullptr;
 bool GPS::active = false;
 GPSData GPS::currentData = {0};
@@ -20,7 +20,9 @@ void GPS::init(uint8_t rxPin, uint8_t txPin, uint32_t baud) {
     // GPS source now auto-configured via GPSSource enum in config
     // Pin selection happens in Config::load() based on gpsSource setting
     Serial.printf("[GPS] Init: RX=%d, TX=%d, baud=%lu\n", rxPin, txPin, baud);
-    
+
+    if (gps == nullptr) gps = new TinyGPSPlus();
+
     // Create mutex for thread safety
     if (mutex == nullptr) {
         mutex = xSemaphoreCreateMutex();
@@ -93,7 +95,7 @@ void GPS::processSerial() {
     while (serial->available() > 0 && processedThisCall < maxBytesPerCall) {
         char c = serial->read();
         if (c != -1) { // Valid byte read
-            gps.encode(c);
+            gps->encode(c);
             bytesProcessed++;
             processedThisCall++;
         }
@@ -108,7 +110,7 @@ void GPS::processSerial() {
     // Uncomment for debugging:
     // uint32_t now = millis();
     // if (now - lastDebugTime >= 5000) {
-    //     Serial.printf("[GPS] Bytes: %lu, Sats: %d, Valid: %s\n", bytesProcessed, gps.satellites.value(), gps.location.isValid() ? "Y" : "N");
+    //     Serial.printf("[GPS] Bytes: %lu, Sats: %d, Valid: %s\n", bytesProcessed, gps->satellites.value(), gps->location.isValid() ? "Y" : "N");
     //     lastDebugTime = now;
     // }
 }
@@ -117,17 +119,17 @@ void GPS::updateData() {
     if (mutex == nullptr) return;  // FIX: Prevent crash if GPS not initialized
     
     // Get current GPS data safely
-    bool valid = gps.location.isValid();
-    double latitude = gps.location.lat();
-    double longitude = gps.location.lng();
-    double altitude = gps.altitude.meters();
-    float speed = gps.speed.kmph();
-    float course = gps.course.deg();
-    uint8_t satellites = gps.satellites.value();
-    uint16_t hdop = gps.hdop.value();
-    uint32_t date = gps.date.isValid() ? gps.date.value() : 0;
-    uint32_t time = gps.time.isValid() ? gps.time.value() : 0;
-    uint32_t age = gps.location.age();
+    bool valid = gps->location.isValid();
+    double latitude = gps->location.lat();
+    double longitude = gps->location.lng();
+    double altitude = gps->altitude.meters();
+    float speed = gps->speed.kmph();
+    float course = gps->course.deg();
+    uint8_t satellites = gps->satellites.value();
+    uint16_t hdop = gps->hdop.value();
+    uint32_t date = gps->date.isValid() ? gps->date.value() : 0;
+    uint32_t time = gps->time.isValid() ? gps->time.value() : 0;
+    uint32_t age = gps->location.age();
     bool fix = valid && (age < 30000);
     
     // Update shared data atomically and check for fix changes - use timeout to prevent WDT
@@ -276,16 +278,16 @@ void GPS::getTimeString(char* out, size_t len) {
         return;
     }
     if (xSemaphoreTake(mutex, 10 / portTICK_PERIOD_MS)) {
-        if (gps.time.isValid()) {
+        if (gps->time.isValid()) {
             // Apply timezone offset from config
             int8_t tzOffset = Config::gps().timezoneOffset;
-            int hour = gps.time.hour() + tzOffset;
+            int hour = gps->time.hour() + tzOffset;
             
             // Handle day wrap
             if (hour >= 24) hour -= 24;
             if (hour < 0) hour += 24;
             
-            snprintf(out, len, "%02d:%02d", hour, gps.time.minute());
+            snprintf(out, len, "%02d:%02d", hour, gps->time.minute());
         } else {
             snprintf(out, len, "--:--");
         }
