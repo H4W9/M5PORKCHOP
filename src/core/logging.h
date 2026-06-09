@@ -12,6 +12,10 @@
 #endif
 
 #if !defined(ARDUINO_CORE_BUILD)
+// When force-included into pure IDF translation units (e.g. cxx_exception_stubs.cpp)
+// Arduino.h is not included, so size_t and uint8_t must come from C++ standard headers.
+#include <cstddef>
+#include <cstdint>
 // Compile-time Serial sink to disable all logging with minimal overhead.
 struct PorkchopNullSerial {
     void begin(unsigned long, uint8_t = 0) {}
