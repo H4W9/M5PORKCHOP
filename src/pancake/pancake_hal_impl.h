@@ -59,8 +59,8 @@ extern TFT_eSPI*        pancakeTFT;
 class M5Canvas : public TFT_eSprite {
 public:
     template<typename T>
-    explicit M5Canvas(T*) : TFT_eSprite(&pancakeTFT) {}
-    M5Canvas() : TFT_eSprite(&pancakeTFT) {}
+    explicit M5Canvas(T*) : TFT_eSprite(pancakeTFT) {}
+    M5Canvas() : TFT_eSprite(pancakeTFT) {}
     void setFont(const void*)        { setTextFont(1); }
     void setFont(const lgfxFont_t*)  { setTextFont(1); }
     using TFT_eSprite::drawString;
@@ -286,7 +286,7 @@ struct M5Cardputer_Class {
             Serial.println("[PANCAKE] FT6336 not found");
         }
 
-        pancakeKeyboard->begin(&pancakeTFT, &pancakeTouch);
+        pancakeKeyboard->begin(pancakeTFT, pancakeTouch);
         pancakeKeyboard->redraw();
 
         pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y - 1, PANCAKE_SCREEN_W, 0x528A);

@@ -251,4 +251,4 @@ private:
     }
 };
 
-extern PancakeKeyboard pancakeKeyboard;
+extern PancakeKeyboard* pancakeKeyboard;

@@ -91,4 +91,4 @@ private:
     }
 };
 
-extern FT6336Touch pancakeTouch;
+extern FT6336Touch* pancakeTouch;
