@@ -19,6 +19,7 @@
 // Compile-time Serial sink to disable all logging with minimal overhead.
 struct PorkchopNullSerial {
     void begin(unsigned long, uint8_t = 0) {}
+    void begin() {}
     void end() {}
     void flush() {}
     void setTimeout(unsigned long) {}
