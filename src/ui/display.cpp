@@ -156,7 +156,7 @@ static void drawTopBarHeapHealth(M5Canvas& topBar) {
     topBar.drawString(levelStr, 2, 3);
     topBar.setTextDatum(top_right);
     topBar.drawString(msgBuf, msgRightX, 3);
-    drawHeartIcon(*topBar, heartX, 3, COLOR_BG);
+    drawHeartIcon(topBar, heartX, 3, COLOR_BG);
 }
 
 // Static member initialization
