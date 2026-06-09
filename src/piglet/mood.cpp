@@ -18,7 +18,7 @@
 #include <string.h>
 #include <time.h>
 
-extern Porkchop porkchop;
+extern Porkchop* porkchop;
 
 // Phase 10: Mood persistence
 static Preferences moodPrefs;
@@ -756,8 +756,8 @@ static bool tryQueueRiddle() {
     if (riddleShownThisBoot) return false;
     
     // Only show riddles in IDLE mode
-    extern Porkchop porkchop;
-    if (porkchop.getMode() != PorkchopMode::IDLE) return false;
+    extern Porkchop* porkchop;
+    if (porkchop->getMode() != PorkchopMode::IDLE) return false;
     
     // 30% chance per phrase cycle in IDLE - high enough to see it, rare enough to feel special
     if (random(0, 100) >= 30) return false;
@@ -1441,7 +1441,7 @@ void Mood::update() {
         
         // Random cute jump in IDLE mode when happy (0.5% chance per phrase cycle)
         // Makes the pig feel alive - spontaneous little hops
-        if (porkchop.getMode() == PorkchopMode::IDLE && getEffectiveHappiness() > 20) {
+        if (porkchop->getMode() == PorkchopMode::IDLE && getEffectiveHappiness() > 20) {
             if (random(0, 200) == 0) {  // 0.5% chance
                 Avatar::cuteJump();
             }
@@ -1488,7 +1488,7 @@ void Mood::onHandshakeCaptured(const char* apName) {
         snprintf(buf1, sizeof(buf1), templates[random(0, 4)], ap);
     } else {
         // Personality-aware excited phrases
-        PorkchopMode mode = porkchop.getMode();
+        PorkchopMode mode = porkchop->getMode();
         bool isCD = (mode == PorkchopMode::DNH_MODE);
         bool isWarhog = (mode == PorkchopMode::WARHOG_MODE);
         
@@ -1554,7 +1554,7 @@ void Mood::onPMKIDCaptured(const char* apName) {
     
     // Award XP for PMKID capture
     // If in DO NO HAM mode, award the rare ghost PMKID XP (100 XP!)
-    if (porkchop.getMode() == PorkchopMode::DNH_MODE) {
+    if (porkchop->getMode() == PorkchopMode::DNH_MODE) {
         XP::addXP(XPEvent::DNH_PMKID_GHOST);  // Rare passive PMKID!
     } else {
         XP::addXP(XPEvent::PMKID_CAPTURED);   // Regular 75 XP
@@ -1569,7 +1569,7 @@ void Mood::onPMKIDCaptured(const char* apName) {
     char buf1[48], buf2[48], buf3[48];
     
     // First phrase - PMKID celebration (personality-aware)
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
     const char** pmkidPhrases;
     int pmkidCount;
     
@@ -1624,7 +1624,7 @@ void Mood::onNewNetwork(const char* apName, int8_t rssi, uint8_t channel) {
     
     // Award XP for network discovery
     // Check if in DO NO HAM mode for different XP event
-    bool isPassive = (porkchop.getMode() == PorkchopMode::DNH_MODE);
+    bool isPassive = (porkchop->getMode() == PorkchopMode::DNH_MODE);
     
     if (apName && strlen(apName) > 0) {
         if (isPassive) {
@@ -1685,7 +1685,7 @@ void Mood::onMLPrediction(float confidence) {
     lastActivityTime = millis();
     
     // Personality-aware phrases
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
     bool isCD = (mode == PorkchopMode::DNH_MODE);
     bool isWarhog = (mode == PorkchopMode::WARHOG_MODE);
     
@@ -1754,7 +1754,7 @@ void Mood::onNoActivity(uint32_t seconds) {
         happiness = max(happiness - 2, -100);
         if (happiness < -20) {
             // Mode-aware boredom phrases
-            PorkchopMode mode = porkchop.getMode();
+            PorkchopMode mode = porkchop->getMode();
             if (mode == PorkchopMode::OINK_MODE || mode == PorkchopMode::SPECTRUM_MODE) {
                 // In hunting modes, use quiet hunting phrases instead of generic sleepy
                 int idx = pickPhraseIdx(PhraseCategory::SLEEPY, sizeof(PHRASES_OINK_QUIET) / sizeof(PHRASES_OINK_QUIET[0]));
@@ -1793,7 +1793,7 @@ void Mood::onWiFiLost() {
     lastActivityTime = millis();
     
     // Personality-aware sad phrases
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
     bool isCD = (mode == PorkchopMode::DNH_MODE);
     bool isWarhog = (mode == PorkchopMode::WARHOG_MODE);
     
@@ -1904,7 +1904,7 @@ bool Mood::pickTimePhraseIfDue(uint32_t now) {
     int8_t hour = getCurrentHour();
     if (hour < 0) return false;
 
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
     bool isCD = (mode == PorkchopMode::DNH_MODE);
     bool isWarhog = (mode == PorkchopMode::WARHOG_MODE);
 
@@ -2037,7 +2037,7 @@ bool Mood::pickGPSPhraseIfDue(uint32_t now) {
 
     GPSData gps = GPS::getData();
 
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
     bool isWarhog = (mode == PorkchopMode::WARHOG_MODE);
 
     // Bad GPS fix
@@ -2223,7 +2223,7 @@ bool Mood::pickWeatherPhraseIfDue(uint32_t now) {
     if (weatherState == lastWeatherState) return false;
     lastWeatherState = weatherState;
 
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
     bool isCD = (mode == PorkchopMode::DNH_MODE);
     bool isWarhog = (mode == PorkchopMode::WARHOG_MODE);
 
@@ -2313,7 +2313,7 @@ void Mood::selectPhrase() {
     PhraseCategory cat;
     
     // Get current mode for personality-specific phrase selection
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
     bool isCD = (mode == PorkchopMode::DNH_MODE);
     bool isWarhog = (mode == PorkchopMode::WARHOG_MODE);
     
@@ -2499,7 +2499,7 @@ void Mood::updateAvatarState() {
     }
 
     // Mode-aware avatar state selection
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
     
     // Mood peek: detect threshold crossings and trigger peek
     // Only for mode-locked states (OINK, PIGGYBLUES, SPECTRUM)

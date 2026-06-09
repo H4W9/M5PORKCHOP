@@ -26,7 +26,7 @@
 #include "modes/warhog.h"
 #include "audio/sfx.h"
 
-Porkchop porkchop;
+Porkchop* porkchop = nullptr;
 
 // --- PATCH: Pre-init WiFi driver early to avoid later esp_wifi_init() failures
 // Some reconnect flows (and some Arduino/M5 stacks) end up deinit/reinit WiFi later.
@@ -93,6 +93,11 @@ void setup() {
     delay(500);  // Wait for USB CDC to enumerate
     Serial.println("\n\n[BOOT] setup() entry - firmware alive");
     Serial.flush();
+
+    // Construct the main application object here, not at global scope.
+    // Global construction runs before setup() with a starved heap (MSPI timing
+    // barrier consumes early heap), causing std::vector members to crash.
+    porkchop = new Porkchop();
 
     // Init hardware
 #ifdef PORKCHOP_PANCAKE
@@ -184,7 +189,7 @@ void setup() {
     // Initialize modes
     OinkMode::init();
     WarhogMode::init();
-    porkchop.init();
+    porkchop->init();
 
     Serial.println("=== PORKCHOP READY ===");
     Serial.printf("Piglet: %s\n", Config::personality().name);
@@ -268,7 +273,7 @@ void loop() {
     Mood::update();
 
     // Update main controller (handles modes, input, state)
-    porkchop.update();
+    porkchop->update();
 
     // Update display
     Display::update();

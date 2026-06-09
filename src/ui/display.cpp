@@ -202,7 +202,7 @@ void Display::showLoot(const String& ssid) {
     lootSSID[sizeof(lootSSID) - 1] = '\0';
 }
 
-extern Porkchop porkchop;
+extern Porkchop* porkchop;
 
 void Display::init() {
 #ifdef PORKCHOP_PANCAKE
@@ -285,7 +285,7 @@ void Display::update() {
     updateDimming();
     
     // SD Format mode hides bars to save RAM for disk operations
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
     bool barsHidden = SdFormatMenu::areBarsHidden() || ChargingMode::areBarsHidden()
                    || (mode == PorkchopMode::BOOT_OTA1);
     bool useAvatarWeather = (mode == PorkchopMode::IDLE ||
@@ -570,7 +570,7 @@ void Display::drawTopBar() {
     topBar.setTextSize(1);
     
     // Left side: mode indicator
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
     char modeBuf[40];
     modeBuf[0] = '\0';
     uint16_t modeColor = COLOR_FG;
@@ -800,7 +800,7 @@ void Display::drawTopBarMessageTwoLineDirect() {
 }
 
 void Display::drawBottomBar() {
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
 
     // Set colors based on mode - PIGSYNC_DEVICE_SELECT uses normal colors, others use inverted
     if (mode == PorkchopMode::PIGSYNC_DEVICE_SELECT) {
@@ -965,7 +965,7 @@ void Display::drawBottomBar() {
         statsStr = statsBuf;
     } else if (mode == PorkchopMode::IDLE) {
         // IDLE: show Networks only (HS shown in OINK)
-        uint16_t netCount = porkchop.getNetworkCount();
+        uint16_t netCount = porkchop->getNetworkCount();
         char buf[24];
         snprintf(buf, sizeof(buf), "N:%03d", netCount);
         strncpy(statsBuf, buf, sizeof(statsBuf) - 1);
@@ -977,7 +977,7 @@ void Display::drawBottomBar() {
         statsStr = "ENTER=CALL UP/DN=SELECT ESC=EXIT";
     } else {
         // Default: Networks only (HS shown in active modes)
-        uint16_t netCount = porkchop.getNetworkCount();
+        uint16_t netCount = porkchop->getNetworkCount();
         char buf[32];
         snprintf(buf, sizeof(buf), "N:%03d", netCount);
         strncpy(statsBuf, buf, sizeof(statsBuf) - 1);
@@ -1041,7 +1041,7 @@ void Display::drawBottomBar() {
                mode == PorkchopMode::DNH_MODE) {
         // No uptime on menu and submenu screens
     } else {
-        uint32_t uptime = porkchop.getUptime();
+        uint32_t uptime = porkchop->getUptime();
         uint16_t mins = uptime / 60;
         uint16_t secs = uptime % 60;
         char uptimeBuf[12];

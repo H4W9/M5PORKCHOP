@@ -10,7 +10,7 @@
 #include <freertos/portmacro.h>
 
 // porkchop global instance lives in main.cpp
-extern Porkchop porkchop;
+extern Porkchop* porkchop;
 
 // static member initialization
 ActiveChallenge Challenges::challenges[3] = {};
@@ -69,7 +69,7 @@ static const uint8_t POOL_SIZE = sizeof(CHALLENGE_POOL) / sizeof(CHALLENGE_POOL[
 // ============================================================
 
 bool Challenges::isPigAwake() {
-    PorkchopMode mode = porkchop.getMode();
+    PorkchopMode mode = porkchop->getMode();
     return mode == PorkchopMode::OINK_MODE ||
            mode == PorkchopMode::DNH_MODE ||
            mode == PorkchopMode::WARHOG_MODE ||
