@@ -16,36 +16,44 @@
 // Arduino.h is not included, so size_t and uint8_t must come from C++ standard headers.
 #include <cstddef>
 #include <cstdint>
-// Compile-time Serial sink to disable all logging with minimal overhead.
+
+// Compile-time Serial sink — drops all output with zero overhead.
+// Inherits from Print when Arduino.h is available so it satisfies Print&
+// default arguments (e.g. WiFiProv.h: printQR(..., Print &out = Serial)).
+#ifdef ARDUINO
+class PorkchopNullSerial : public Print {
+public:
+    size_t write(uint8_t) override       { return 1; }
+    size_t write(const uint8_t*, size_t n) override { return n; }
+#else
 struct PorkchopNullSerial {
-    void begin(unsigned long, uint8_t = 0) {}
-    void begin() {}
-    void end() {}
-    void flush() {}
-    void setTimeout(unsigned long) {}
-    unsigned long getTimeout() { return 0; }
-    void setDebugOutput(bool) {}
-    int available() { return 0; }
-    int read() { return -1; }
-    int peek() { return -1; }
+    size_t write(uint8_t)                { return 1; }
+    size_t write(const uint8_t*, size_t n) { return n; }
+#endif
+    void   begin(unsigned long, uint8_t = 0) {}
+    void   begin()                       {}
+    void   end()                         {}
+    void   flush()                       {}
+    void   setTimeout(unsigned long)     {}
+    unsigned long getTimeout()           { return 0; }
+    void   setDebugOutput(bool)          {}
+    int    available()                   { return 0; }
+    int    read()                        { return -1; }
+    int    peek()                        { return -1; }
 
     template <typename... Args>
-    size_t printf(const char*, Args...) { return 0; }
+    size_t printf(const char*, Args...)  { return 0; }
 
     template <typename T>
-    size_t print(const T&) { return 0; }
-
-    size_t print(const char*) { return 0; }
-    size_t print(char) { return 0; }
+    size_t print(const T&)               { return 0; }
+    size_t print(const char*)            { return 0; }
+    size_t print(char)                   { return 0; }
 
     template <typename T>
-    size_t println(const T&) { return 0; }
+    size_t println(const T&)             { return 0; }
+    size_t println()                     { return 0; }
 
-    size_t println() { return 0; }
-
-    size_t write(uint8_t) { return 1; }
-    size_t write(const uint8_t*, size_t n) { return n; }
-    operator bool() const { return false; }
+    operator bool() const                { return false; }
 };
 
 static PorkchopNullSerial PorkchopSerialSink;
