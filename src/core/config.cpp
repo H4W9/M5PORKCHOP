@@ -12,6 +12,14 @@
 #include <SPI.h>
 #include <driver/gpio.h>
 
+#ifdef PORKCHOP_PANCAKE
+// Pancake shares the TFT SPI bus for SD (CS multiplexed).
+#include "pancake_config.h"
+static constexpr int SD_CS_PIN   = PANCAKE_SD_CS;
+static constexpr int SD_MOSI_PIN = PANCAKE_TFT_MOSI;
+static constexpr int SD_MISO_PIN = PANCAKE_TFT_MISO;
+static constexpr int SD_SCK_PIN  = PANCAKE_TFT_CLK;
+#else
 // ---- Cardputer microSD wiring (explicit, per Cardputer v1.1 schematic) ----
 // ESP32-S3FN8:
 //   microSD Socket  CS   MOSI  CLK   MISO
@@ -22,6 +30,7 @@ static constexpr int SD_CS_PIN   = 12;  // CS
 static constexpr int SD_MOSI_PIN = 14;  // MOSI
 static constexpr int SD_MISO_PIN = 39;  // MISO
 static constexpr int SD_SCK_PIN  = 40;  // SCK/CLK
+#endif
 
 // Dedicated SPI bus instance for SD.
 // Cardputer microSD pinmap (from M5 docs): CS=12 MOSI=14 CLK=40 MISO=39.

@@ -292,13 +292,8 @@ struct M5Cardputer_Class {
         pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y - 1, PANCAKE_SCREEN_W, 0x528A);
         pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y,     PANCAKE_SCREEN_W, 0x528A);
 
-        // SD card: TFT_eSPI already called SPI.begin() with the TFT pins.
-        // SD.begin() with the same SPI instance works because TFT_eSPI uses
-        // chip-select to multiplex — do NOT call SPI.begin() again here as it
-        // would reinitialize the bus and corrupt the TFT state.
-        if (!SD.begin(PANCAKE_SD_CS)) {
-            Serial.println("[PANCAKE] SD mount failed");
-        }
+        // SD is mounted by Config::init() (dedicated SPI bus, correct pins,
+        // multi-speed retry). Do not SD.begin() here.
     }
 
     void update() { PancakeKB::resetPollFlag(); }
