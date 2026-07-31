@@ -457,9 +457,10 @@ void OinkMode::stop() {
     deauthing = false;
     scanning = false;
     
-    // Stop grass animation
+    // Stop grass animation and the fruit tree
     Avatar::setGrassMoving(false);
-    
+    Avatar::hideTree();
+
     // Clear our callbacks (NetworkRecon keeps running)
     NetworkRecon::setPacketCallback(nullptr);
     NetworkRecon::setNewNetworkCallback(nullptr);
@@ -578,8 +579,28 @@ void OinkMode::update() {
     NetworkRecon::exitCritical();
     if (hasPendingDeauth) {
         Mood::onDeauthSuccess(pendingStationCopy);
+        Avatar::dropFruit();   // shake a fruit loose on a confirmed kick
     }
-    
+
+    // Fruit tree: show while locked onto / attacking a target (one per juicy AP)
+    {
+        bool wantTree = (autoState == AutoState::LOCKING ||
+                         autoState == AutoState::ATTACKING ||
+                         autoState == AutoState::WAITING);
+        static bool hadTree = false;
+        if (wantTree && !hadTree) {
+            uint8_t fruits = 0;
+            auto& nets = networks();
+            for (size_t i = 0; i < nets.size() && fruits < 8; i++) {
+                if (NetworkRecon::estimateClientCount(nets[i]) > 0) fruits++;
+            }
+            if (fruits > 0) Avatar::showTree(fruits);
+        } else if (!wantTree && hadTree) {
+            Avatar::hideTree();
+        }
+        hadTree = wantTree;
+    }
+
     // Process pending mood: handshake complete
     char pendingHandshakeCopy[33] = {0};
     bool hasPendingHandshakeDone = false;

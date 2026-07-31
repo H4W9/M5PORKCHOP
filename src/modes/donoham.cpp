@@ -284,9 +284,10 @@ void DoNoHamMode::stop() {
     running = false;
     dnhBusy = true;
     
-    // Stop grass animation
+    // Stop grass animation and the fruit tree
     Avatar::setGrassMoving(false);
-    
+    Avatar::hideTree();
+
     bool pausedByUs = false;
     if (NetworkRecon::isRunning()) {
         NetworkRecon::pause();
@@ -644,6 +645,23 @@ void DoNoHamMode::update() {
     bool wasHopping = (lastGrassState == DNHState::HOPPING || lastGrassState == DNHState::IDLE_SWEEP);
     if (isHopping != wasHopping) {
         Avatar::setGrassMoving(isHopping);
+    }
+
+    // Fruit tree: show while hunting a hot channel
+    {
+        bool isHunting = (state == DNHState::HUNTING);
+        static bool hadTree = false;
+        if (isHunting && !hadTree) {
+            uint8_t fruits = 0;
+            const auto& nets = NetworkRecon::getNetworks();
+            for (size_t i = 0; i < nets.size() && fruits < 8; i++) {
+                if (NetworkRecon::estimateClientCount(nets[i]) > 0) fruits++;
+            }
+            Avatar::showTree(fruits > 0 ? fruits : (uint8_t)1);
+        } else if (!isHunting && hadTree) {
+            Avatar::hideTree();
+        }
+        hadTree = isHunting;
     }
     lastGrassState = state;
     

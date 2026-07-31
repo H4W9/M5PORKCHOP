@@ -13,6 +13,13 @@ enum class AvatarState {
     ANGRY
 };
 
+enum class TreePhase : uint8_t {
+    HIDDEN = 0,   // Not visible
+    GROWING,      // Trunk -> canopy -> fruits animation
+    ALIVE,        // Fully grown, gentle sway + fruit bob
+    COLLAPSING    // Reverse animation
+};
+
 class Avatar {
 public:
     static void init();
@@ -42,6 +49,45 @@ public:
     // Thunder flash (invert colors for weather effect)
     static void setThunderFlash(bool active);
     static bool isThunderFlashing();
+
+    // ---- Fruit tree (hunting "walk up & shake" animation) ----
+    static void showTree(uint8_t fruitCount);  // Grow a tree with N fruits
+    static void hideTree();                     // Collapse it
+    static bool isTreeVisible();
+    static void dropFruit();                    // Detach one fruit (deauth success)
+    static void drawTree(M5Canvas& canvas);     // Draw behind the pig
+    static void generateTree(uint8_t fruitCount);
+    static void updateTree();
+
+    struct TreeFruit  { int8_t offsetX, offsetY; uint8_t radius; uint8_t bobPhase; };
+    struct TreeBranch { int8_t x1, y1, x2, y2; uint8_t thickness; };
+    struct TreeLeafCluster { int8_t cx, cy; uint8_t radius; };
+    struct TreeTrunk  { int16_t baseX; uint8_t trunkHeight; uint8_t trunkWidth; int8_t trunkLean; uint8_t crownRadius; };
+
+    static constexpr uint8_t  MAX_BRANCHES = 18;
+    static constexpr uint8_t  MAX_LEAF_CLUSTERS = 16;
+    static constexpr uint8_t  MAX_TREE_FRUITS = 8;
+    static constexpr uint16_t TREE_GROW_MS = 600;
+    static constexpr uint16_t TREE_COLLAPSE_MS = 350;
+    static constexpr uint16_t TREE_MIN_ALIVE_MS = 4000;
+
+    static TreePhase treePhase;
+    static float treeGrowth;
+    static uint32_t treeAnimStart;
+    static TreeTrunk treeTrunk;
+    static TreeBranch treeBranches[MAX_BRANCHES];
+    static uint8_t treeBranchCount;
+    static TreeLeafCluster treeLeaves[MAX_LEAF_CLUSTERS];
+    static uint8_t treeLeafCount;
+    static uint8_t treeEndpointLeafCount;
+    static TreeFruit treeFruits[MAX_TREE_FRUITS];
+    static uint8_t treeFruitCount;
+    static uint32_t treeSeed;
+    static bool treePendingHide;
+    static bool treePendingShow;
+    static uint8_t treePendingFruits;
+    static uint32_t treeAliveStart;
+    static int16_t treeScrollOffset;
 
     // Night sky star system (RTC-based)
     static bool isNightTime();           // check rtc for night hours, 20:00-06:00
