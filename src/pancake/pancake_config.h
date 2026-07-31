@@ -18,17 +18,21 @@
 #define PANCAKE_TFT_BL    26   // active HIGH
 
 // ---- FT6336 capacitive touch (I2C) -------------------------
-#define PANCAKE_TOUCH_SDA  15
-#define PANCAKE_TOUCH_SCL  16
-#define PANCAKE_TOUCH_INT  17   // active LOW, optional
-#define PANCAKE_TOUCH_RST  -1
+#define PANCAKE_TOUCH_SDA   9
+#define PANCAKE_TOUCH_SCL  10
+#define PANCAKE_TOUCH_INT  -1
+#define PANCAKE_TOUCH_RST   8
 #define FT6336_I2C_ADDR    0x38
 
 // ---- SD card -----------------------------------------------
-#define PANCAKE_SD_CS       8   // adjust if your wiring differs
+#define PANCAKE_SD_CS       7
 
-// ---- NeoPixel ----------------------------------------------
-#define PANCAKE_LED_PIN    38
+// ---- NeoPixel (onboard RGB) --------------------------------
+#ifdef RGB_BUILTIN
+  #define PANCAKE_LED_PIN  RGB_BUILTIN
+#else
+  #define PANCAKE_LED_PIN  LED_BUILTIN
+#endif
 #define PANCAKE_LED_COUNT   1
 
 // ---- Display geometry --------------------------------------

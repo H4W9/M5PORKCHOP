@@ -24,8 +24,6 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.platformio
-          # Prefix bumped to 55311 so caches from the old 'stable' platform
-          # are NOT restored (they would shadow the pinned IDF 5.5.5 install).
           key: pio-pancake-55311-${{ hashFiles('platformio.ini') }}
           restore-keys: |
             pio-pancake-55311-
@@ -59,8 +57,6 @@ jobs:
           A2L=$(find ~/.platformio/packages -name 'riscv32-esp-elf-addr2line' 2>/dev/null | head -1)
           echo "nm=$NM addr2line=$A2L elf=$ELF"
           if [ -n "$NM" ] && [ -f "$ELF" ]; then
-            # Address-sorted, demangled, with sizes: find the symbol whose
-            # range contains a crash PC (e.g. 0x42085afa) by scanning this file.
             "$NM" -nSC "$ELF" > .pio/build/pancake/firmware.sym.txt || true
             echo "symbols: $(wc -l < .pio/build/pancake/firmware.sym.txt) lines"
           fi
@@ -69,8 +65,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: firmware-pancake
-          # Include the ELF and linker map so crash PCs can be symbolized
-          # (riscv addr2line firmware.elf 0x...) and section sizes inspected.
           path: |
             .pio/build/pancake/firmware.bin
             .pio/build/pancake/firmware.elf
