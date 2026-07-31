@@ -26,7 +26,7 @@
 // Static member initialization
 PorkXPData XP::data = {0};
 SessionStats XP::session = {0};
-Preferences XP::prefs;
+SpiffsPrefs XP::prefs;
 bool XP::initialized = false;
 void (*XP::levelUpCallback)(uint8_t, uint8_t) = nullptr;
 

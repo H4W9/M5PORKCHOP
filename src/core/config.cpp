@@ -278,8 +278,15 @@ static void ensureSdSpiReady() {
     pinMode(SD_CS_PIN, OUTPUT);
     digitalWrite(SD_CS_PIN, HIGH);
 
+#ifdef PORKCHOP_PANCAKE
+    // Pancake shares the FSPI bus with the TFT. Init the bus WITHOUT an SS pin
+    // (3-arg) so SPIClass does not claim CS — SD.begin() manages CS itself.
+    // (per ESP32Marauder HAS_C5_SD; the 4-arg form makes SD's CS handling fail.)
+    sdSPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN);
+#else
     // SCK, MISO, MOSI, SS/CS
     sdSPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
+#endif
     sdSpiBegun = true;
     delay(20);
 }

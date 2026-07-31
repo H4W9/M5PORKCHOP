@@ -299,6 +299,22 @@ void Display::update() {
     // Update heap health state (rate-limited)
     HeapHealth::update();
 
+#ifdef PORKCHOP_PANCAKE
+    // Any touch anywhere on the screen counts as activity (keeps the display
+    // awake / wakes it from dim). Keyboard taps already call resetDimTimer(),
+    // but tapping the pig/top area otherwise would let it dim to darkness.
+    // Rate-limited — dimming is a multi-second timer, no need to poll every frame.
+    {
+        static uint32_t lastTouchWakeCheck = 0;
+        uint32_t nowMs = millis();
+        if (pancakeTouch && nowMs - lastTouchWakeCheck > 200) {
+            lastTouchWakeCheck = nowMs;
+            PancakeTouchPoint _tp;
+            if (pancakeTouch->getPoint(_tp) && _tp.valid) resetDimTimer();
+        }
+    }
+#endif
+
     // Check for screen dimming
     updateDimming();
     

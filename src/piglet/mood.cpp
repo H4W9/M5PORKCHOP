@@ -13,7 +13,7 @@
 #include "../ui/swine_stats.h"
 #include "../modes/oink.h"
 #include "../audio/sfx.h"
-#include <Preferences.h>
+#include "../core/spiffs_prefs.h"
 #include <ctype.h>
 #include <string.h>
 #include <time.h>
@@ -21,7 +21,7 @@
 extern Porkchop* porkchop;
 
 // Phase 10: Mood persistence
-static Preferences moodPrefs;
+static SpiffsPrefs moodPrefs;
 static const char* MOOD_NVS_NAMESPACE = "porkmood";
 
 // Helper: safe copy into fixed-size char buffer

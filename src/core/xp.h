@@ -2,7 +2,7 @@
 #pragma once
 
 #include <M5Unified.h>
-#include <Preferences.h>
+#include "spiffs_prefs.h"
 
 // Class tiers (every 5 levels)
 enum class PorkClass : uint8_t {
@@ -290,7 +290,7 @@ public:
 private:
     static PorkXPData data;
     static SessionStats session;
-    static Preferences prefs;
+    static SpiffsPrefs prefs;
     static bool initialized;
     static void (*levelUpCallback)(uint8_t, uint8_t);
     
