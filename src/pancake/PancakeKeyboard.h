@@ -91,10 +91,11 @@ public:
         ch = 0; sp = PKEY_NONE;
         if (!_touch) return false;
 
-        bool touched = _touch->isCurrentlyDown();
-        // Force a fresh getPoint call to update _wasDown
+        // Read the CURRENT touch directly. (Do not use isCurrentlyDown() —
+        // that returns _wasDown, which only isTouchDown() updates and nothing
+        // calls, so it was always false and no key ever registered.)
         PancakeTouchPoint tp;
-        bool hasPoint = _touch->getPoint(tp);
+        bool touched = _touch->getPoint(tp) && tp.valid;
 
         if (!touched) {
             _lastTouchDown = false;
@@ -103,7 +104,7 @@ public:
         if (_lastTouchDown) return false;  // only fire on new press
         _lastTouchDown = true;
 
-        if (!hasPoint || !tp.valid || tp.y < PANCAKE_KB_Y) return false;
+        if (tp.y < PANCAKE_KB_Y) return false;
 
         for (int i = 0; i < _n; i++) {
             PKey &k = _keys[i];

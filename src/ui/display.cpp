@@ -528,10 +528,18 @@ void Display::pushAll() {
     M5.Display.endWrite();
 
 #ifdef PORKCHOP_PANCAKE
-    // Redraw keyboard separator and keyboard in case a fillScreen wiped it.
-    // The keyboard pane itself is not touched by porkchop sprites, but the
-    // separator line sits at DISPLAY_H-1 and may have been clipped.
-    pancakeRedrawKeyboard();
+    // The porkchop sprites only cover the top pane (y 0..DISPLAY_H); the keyboard
+    // pane (y DISPLAY_H..480) is not touched by them, so it does NOT need
+    // repainting every frame — doing so made the keyboard flicker constantly.
+    // Only repaint it when the mode changes (mode transitions may fillScreen).
+    static PorkchopMode lastKbMode = (PorkchopMode)0xFF;
+    static bool kbDrawnOnce = false;
+    PorkchopMode kbMode = porkchop ? porkchop->getMode() : PorkchopMode::IDLE;
+    if (!kbDrawnOnce || kbMode != lastKbMode) {
+        kbDrawnOnce = true;
+        lastKbMode = kbMode;
+        pancakeRedrawKeyboard();
+    }
 #endif
 
     if (topBarMessageTwoLineActive) {
