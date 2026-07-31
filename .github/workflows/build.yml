@@ -39,6 +39,18 @@ jobs:
         run: |
           pio run -e pancake
 
+      - name: Dump EFFECTIVE sdkconfig (verify custom_sdkconfig actually applied)
+        if: always()
+        run: |
+          echo "=== generated sdkconfig files ==="
+          find .pio -name 'sdkconfig' -o -name 'sdkconfig.h' 2>/dev/null
+          F=$(find .pio -path '*pancake*' -name 'sdkconfig' 2>/dev/null | head -1)
+          echo "### using: $F"
+          if [ -n "$F" ]; then
+            echo "--- SPIRAM ---";  grep -iE 'CONFIG_SPIRAM' "$F" || echo "(no SPIRAM lines)"
+            echo "--- CONSOLE ---"; grep -iE 'CONFIG_ESP_CONSOLE' "$F" || true
+          fi
+
       - name: Generate symbol table (for crash-PC symbolization)
         if: always()
         run: |
