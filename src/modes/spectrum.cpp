@@ -49,8 +49,12 @@ const int8_t NOISE_FLOOR_DB = -92;  // Simulated noise floor level (future)
 // View defaults
 const float DEFAULT_CENTER_MHZ = 2437.0f;  // Channel 6
 const float DEFAULT_WIDTH_MHZ = 60.0f;     // ~12 channels visible
-const float MIN_CENTER_MHZ = 2412.0f;      // Channel 1
+const float MIN_CENTER_MHZ = 2412.0f;      // Channel 1 (2.4 GHz)
+#ifdef PORKCHOP_PANCAKE
+const float MAX_CENTER_MHZ = 5825.0f;      // Channel 165 (5 GHz, dual-band C5)
+#else
 const float MAX_CENTER_MHZ = 2472.0f;      // Channel 13
+#endif
 const float BAND_MIN_MHZ = 2400.0f;        // 2.4GHz band edge (approx)
 const float BAND_MAX_MHZ = 2483.5f;        // 2.4GHz band edge (approx)
 const float LOBE_HALF_WIDTH_MHZ = 15.0f;   // Gaussian half-width
@@ -956,11 +960,21 @@ void SpectrumMode::drawChannelMarkers(M5Canvas& canvas) {
         }
     }
     
-    // Draw channel numbers for visible channels
-    for (uint8_t ch = 1; ch <= 13; ch++) {
+    // Draw channel numbers for visible channels (2.4 GHz + 5 GHz on Pancake).
+    // The visibility check below filters to whatever the view currently covers.
+#ifdef PORKCHOP_PANCAKE
+    static const uint8_t markerChannels[] = {
+        1,2,3,4,5,6,7,8,9,10,11,12,13,
+        36,40,44,48,149,153,157,161,165
+    };
+#else
+    static const uint8_t markerChannels[] = {1,2,3,4,5,6,7,8,9,10,11,12,13};
+#endif
+    for (uint8_t mi = 0; mi < sizeof(markerChannels); mi++) {
+        uint8_t ch = markerChannels[mi];
         float freq = channelToFreq(ch);
         int x = freqToX(freq);
-        
+
         // Only draw if in visible area
         if (x >= SPECTRUM_LEFT && x <= SPECTRUM_RIGHT) {
             // Tick mark
@@ -1514,10 +1528,13 @@ void SpectrumMode::drawGaussianLobe(M5Canvas& canvas, float centerFreqMHz,
 
     float center = constrain(centerFreqMHz, MIN_CENTER_MHZ, MAX_CENTER_MHZ);
     
-    // Sinc extends ±22MHz (to show side lobes)
+    // Sinc extends ±22MHz (to show side lobes). Clamp to the AP's own band
+    // edges — a 5 GHz lobe must not be clamped to the 2.4 GHz band.
     const float SINC_HALF_WIDTH = 22.0f;
-    float startFreq = fmax(center - SINC_HALF_WIDTH, BAND_MIN_MHZ);
-    float endFreq = fmin(center + SINC_HALF_WIDTH, BAND_MAX_MHZ);
+    float bandMin = (center >= 5000.0f) ? 5150.0f : BAND_MIN_MHZ;
+    float bandMax = (center >= 5000.0f) ? 5895.0f : BAND_MAX_MHZ;
+    float startFreq = fmax(center - SINC_HALF_WIDTH, bandMin);
+    float endFreq = fmin(center + SINC_HALF_WIDTH, bandMax);
     
     int peakY = rssiToY(rssi);
     int baseY = SPECTRUM_BOTTOM;
@@ -1640,8 +1657,13 @@ int SpectrumMode::rssiToY(int8_t rssi) {
 }
 
 float SpectrumMode::channelToFreq(uint8_t channel) {
-    // 2.4GHz band: Ch1=2412MHz, 5MHz spacing, Ch13=2472MHz
+    // 5 GHz band (ch 36..165): freq = 5000 + ch*5 (ch36=5180, ch165=5825)
+    if (channel >= 36) {
+        return 5000.0f + (float)channel * 5.0f;
+    }
+    // 2.4GHz band: Ch1=2412MHz, 5MHz spacing, Ch13=2472MHz, Ch14=2484MHz
     if (channel < 1) channel = 1;
+    if (channel == 14) return 2484.0f;
     if (channel > 13) channel = 13;
     return 2412.0f + (channel - 1) * 5.0f;
 }

@@ -38,10 +38,18 @@ static size_t heapLargestAtStart = 0;
 static bool heapStabilized = false;
 // shrinkDeferCount removed — shrink_to_fit no longer runs during operation
 
-// Channel hop order (most common channels first for faster discovery)
+// Channel hop order (most common channels first for faster discovery).
+// Pancake (ESP32-C5) is dual-band, so 5 GHz UNII channels are appended.
+#ifdef PORKCHOP_PANCAKE
+static const uint8_t CHANNEL_HOP_ORDER[RECON_CHANNEL_COUNT] = {
+    1, 6, 11, 36, 40, 44, 48, 149, 153, 157, 161, 165,
+    2, 3, 4, 5, 7, 8, 9, 10, 12, 13
+};
+#else
 static const uint8_t CHANNEL_HOP_ORDER[RECON_CHANNEL_COUNT] = {
     1, 6, 11, 2, 3, 4, 5, 7, 8, 9, 10, 12, 13
 };
+#endif
 
 // Stale network timeout (remove if not seen for this long)
 static const uint32_t STALE_TIMEOUT_MS = 60000;
@@ -833,6 +841,11 @@ void start() {
     esp_wifi_set_promiscuous_rx_cb(promiscuousCallback);
     esp_wifi_set_promiscuous_filter(nullptr);  // Receive all packet types
     esp_wifi_set_promiscuous(true);
+#ifdef PORKCHOP_PANCAKE
+    // ESP32-C5 is dual-band — allow 2.4 GHz + 5 GHz so 5 GHz channels can be
+    // hopped/scanned (esp_wifi_set_channel() accepts 5 GHz nums after this).
+    esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
+#endif
     esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
     
     running = true;

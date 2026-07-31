@@ -230,8 +230,14 @@ OinkMode::BoarBro OinkMode::boarBros[50] = {};
 uint16_t OinkMode::boarBrosCount = 0;
 static const size_t MAX_BOAR_BROS = 50;  // Max excluded networks
 
-// Channel hop order (most common channels first)
+// Channel hop order (most common channels first).
+// Pancake (ESP32-C5) is dual-band, so 5 GHz UNII channels are included.
+#ifdef PORKCHOP_PANCAKE
+const uint8_t CHANNEL_HOP_ORDER[] = {1, 6, 11, 36, 40, 44, 48, 149, 153, 157, 161, 165,
+                                     2, 3, 4, 5, 7, 8, 9, 10, 12, 13};
+#else
 const uint8_t CHANNEL_HOP_ORDER[] = {1, 6, 11, 2, 3, 4, 5, 7, 8, 9, 10, 12, 13};
+#endif
 const uint8_t CHANNEL_COUNT = sizeof(CHANNEL_HOP_ORDER);
 uint8_t currentHopIndex = 0;
 

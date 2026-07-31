@@ -10,8 +10,12 @@
 // Maximum networks to track
 #define MAX_RECON_NETWORKS 200
 
-// Channel hop order (2.4GHz - most common first)
+// Channel hop count. Pancake (ESP32-C5) adds 5 GHz UNII channels (dual-band).
+#ifdef PORKCHOP_PANCAKE
+#define RECON_CHANNEL_COUNT 22
+#else
 #define RECON_CHANNEL_COUNT 13
+#endif
 
 // Heap stabilization typically happens within this time
 #define HEAP_STABILIZE_TIMEOUT_MS 500
