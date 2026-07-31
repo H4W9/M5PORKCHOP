@@ -216,7 +216,7 @@ void Display::init() {
 #ifdef PORKCHOP_PANCAKE
     // Pancake: TFT, touch, and keyboard already inited by M5Cardputer.begin().
     // TFT_eSPI doesn't have setColorDepth() — color depth is compile-time only.
-    pancakeTFT.fillRect(0, 0, DISPLAY_W, DISPLAY_H, COLOR_BG);
+    pancakeTFT->fillRect(0, 0, DISPLAY_W, DISPLAY_H, COLOR_BG);
 
     // Construct canvas objects here (not at global scope) so TFT_eSprite
     // constructors run after the heap and hardware are fully initialized.
@@ -798,13 +798,13 @@ void Display::drawTopBarMessageTwoLineDirect() {
     uint16_t fg = getColorFG();
     uint16_t bg = getColorBG();
 #ifdef PORKCHOP_PANCAKE
-    pancakeTFT.fillRect(0, 0, DISPLAY_W, TOP_BAR_H * 2, fg);
-    pancakeTFT.setTextColor(bg, fg);
-    pancakeTFT.setTextSize(1);
-    pancakeTFT.setCursor(2, 3);
-    pancakeTFT.print(line1Buf);
-    pancakeTFT.setCursor(2, TOP_BAR_H + 3);
-    pancakeTFT.print(line2Buf);
+    pancakeTFT->fillRect(0, 0, DISPLAY_W, TOP_BAR_H * 2, fg);
+    pancakeTFT->setTextColor(bg, fg);
+    pancakeTFT->setTextSize(1);
+    pancakeTFT->setCursor(2, 3);
+    pancakeTFT->print(line1Buf);
+    pancakeTFT->setCursor(2, TOP_BAR_H + 3);
+    pancakeTFT->print(line2Buf);
 #else
     M5Cardputer.Display.fillRect(0, 0, DISPLAY_W, TOP_BAR_H * 2, fg);
     M5Cardputer.Display.setTextColor(bg, fg);
@@ -1283,7 +1283,7 @@ static void bootSplashDelay(uint32_t ms) {
 
 void Display::showBootSplash() {
 #ifdef PORKCHOP_PANCAKE
-    auto& disp = pancakeTFT;
+    auto& disp = *pancakeTFT;
     disp.fillRect(0, 0, DISPLAY_W, DISPLAY_H, COLOR_BG);
     disp.setTextColor(COLOR_FG);
     disp.setTextDatum(MC_DATUM);
