@@ -29,6 +29,8 @@ public:
         }
         Wire.begin(_sda, _scl);
         uint8_t id = _readReg(0xA8);  // Vendor ID
+        Serial.printf("[TOUCH] FT6336 begin sda=%d scl=%d rst=%d vendorID=0x%02X\n",
+                      _sda, _scl, _rst, id);
         return (id != 0xFF && id != 0x00);
     }
 
