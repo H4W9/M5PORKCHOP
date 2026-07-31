@@ -3,7 +3,7 @@ name: Build
 on:
   workflow_dispatch:
   push:
-    branches: [ main, develop, personality_disorder_innit ]
+    branches: [ main, develop, personality_disorder_innit, Pancake-Porkchop ]
   pull_request:
     branches: [ main ]
 
