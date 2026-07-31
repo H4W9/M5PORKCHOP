@@ -32,6 +32,7 @@ enum PancakeSpecial : uint8_t {
     PKEY_DOT     = 7,   // . — scroll down / nav down
     PKEY_COMMA   = 8,   // , — spectrum pan left
     PKEY_SLASH   = 9,   // / — spectrum pan right
+    PKEY_SCREENSHOT = 10, // SCR — emits 'p' (screenshot) but labelled SCR, cyan
 };
 
 // ---- Colour palette ----------------------------------------
@@ -42,6 +43,7 @@ static const uint16_t KB_BORDER  = 0x528A;
 static const uint16_t KB_TEXT    = TFT_WHITE;
 static const uint16_t KB_RED     = TFT_RED;
 static const uint16_t KB_GREEN   = TFT_GREEN;
+static const uint16_t KB_CYAN    = TFT_CYAN;
 
 // ---- Shortcut classification --------------------------------
 // Returns 0=normal 1=green(nav) 2=red(attack)
@@ -190,31 +192,38 @@ private:
             for (int i = 0; i < n; i++) { _add(r[i], PKEY_NONE, x, y, w, rh-m); x += w+m; }
             _add(0, PKEY_ENTER, x, y, W-x-1, rh-m);
         }
-        // Row 3: SHIFT  ZXCVBNM  ;(UP)
+        // Right-aligned nav column, shared by rows 3 & 4:
+        //   row 4: ... SCR  <   DN   >
+        //   row 3: ...      (SHIFT above >, UP above DN)
+        const int wNav = 40;
+        const int gtX  = W - wNav - 1;          // '>'   (rightmost)
+        const int dnX  = gtX  - (wNav + m);     // 'DN'  (.)
+        const int ltX  = dnX  - (wNav + m);     // '<'   (,)
+        const int scrX = ltX  - (wNav + m);     // 'SCR' (p)
+
+        // Row 3: ZXCVBNM  UP(above DN)  SHFT(right)
         {
             const char *r = "zxcvbnm";
-            int n   = 7;
-            int wSh = 44, wUp = 44;
-            int w   = (W - 2*m - wSh - wUp - (n+1)*m) / n;
-            int y   = y0 + 3*rh;
-            _add(0, PKEY_SHIFT, m, y, wSh, rh-m);
-            int x = m + wSh + m;
+            int n = 7;
+            int w = 30;                          // fixed so letters end before UP
+            int y = y0 + 3*rh;
+            int x = m;
             for (int i = 0; i < n; i++) { _add(r[i], PKEY_NONE, x, y, w, rh-m); x += w+m; }
-            _add(';', PKEY_SEMICOL, W-wUp-1, y, wUp, rh-m);   // UP at right edge
+            _add(';', PKEY_SEMICOL, dnX, y, wNav, rh-m);   // UP directly above DN
+            _add(0,   PKEY_SHIFT,   gtX, y, wNav, rh-m);   // SHFT moved to right
         }
-        // Row 4: `(back)  SPACE(small)  ,(<)  .(DN)  /(>)  p(shot)
+        // Row 4: `(back)  SPACE  SCR  <  DN  >
         {
-            int y    = y0 + 4*rh;
-            int wBk  = 44, wNav = 40, wP = 40;
-            int x    = m;
-            _add('`', PKEY_BACKTICK, x, y, wBk, rh-m); x += wBk + m;
-            int rightW = 3*wNav + wP + 4*m;              // , . / p + gaps
-            int spW    = W - x - rightW - 1;
-            _add(' ', PKEY_SPACE,  x, y, spW,  rh-m); x += spW  + m;
-            _add(',', PKEY_COMMA,  x, y, wNav, rh-m); x += wNav + m;
-            _add('.', PKEY_DOT,    x, y, wNav, rh-m); x += wNav + m;
-            _add('/', PKEY_SLASH,  x, y, wNav, rh-m);
-            _add('p', PKEY_NONE,   W-wP-1, y, wP, rh-m);
+            int y   = y0 + 4*rh;
+            int wBk = 44;
+            _add('`', PKEY_BACKTICK, m, y, wBk, rh-m);
+            int spX = m + wBk + m;
+            int spW = scrX - m - spX;                      // SPACE fills up to SCR
+            _add(' ', PKEY_SPACE,     spX,  y, spW,  rh-m);
+            _add('p', PKEY_SCREENSHOT, scrX, y, wNav, rh-m); // SCR (cyan; emits 'p')
+            _add(',', PKEY_COMMA,     ltX,  y, wNav, rh-m); // <
+            _add('.', PKEY_DOT,       dnX,  y, wNav, rh-m); // DN
+            _add('/', PKEY_SLASH,     gtX,  y, wNav, rh-m); // >
         }
     }
 
@@ -223,7 +232,8 @@ private:
         int sc = kbShortcutClass(k.ch, k.code);
         uint16_t fill   = pressed ? KB_KEY_PRS : KB_KEY_NRM;
         uint16_t textcol= pressed ? KB_TEXT
-                        : (sc == 2 ? KB_RED : (sc == 1 ? KB_GREEN : KB_TEXT));
+                        : (k.code == PKEY_SCREENSHOT ? KB_CYAN
+                        : (sc == 2 ? KB_RED : (sc == 1 ? KB_GREEN : KB_TEXT)));
 
         _tft->fillRect(k.x, k.y, k.w, k.h, fill);
         _tft->drawRect(k.x, k.y, k.w, k.h, KB_BORDER);
@@ -245,13 +255,14 @@ private:
         switch (k.code) {
             case PKEY_BKSP:     strcpy(out, "DEL");   return;
             case PKEY_ENTER:    strcpy(out, "ENT");   return;
-            case PKEY_SHIFT:    strcpy(out, _shifted ? "SHF" : "shf"); return;
+            case PKEY_SHIFT:    strcpy(out, _shifted ? "SHFT" : "shft"); return;
             case PKEY_SPACE:    strcpy(out, "SPC");   return;
             case PKEY_BACKTICK: strcpy(out, "`/BK");  return;
             case PKEY_SEMICOL:  strcpy(out, ";/UP");  return;
             case PKEY_DOT:      strcpy(out, "./DN");  return;
             case PKEY_COMMA:    strcpy(out, ",/<");   return;
             case PKEY_SLASH:    strcpy(out, "//>"); return;
+            case PKEY_SCREENSHOT: strcpy(out, "SCR"); return;
             default: break;
         }
         if (k.ch) {
