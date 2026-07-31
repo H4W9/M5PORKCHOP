@@ -5,6 +5,7 @@
 #include "donoham.h"
 #include <M5Unified.h>
 #include <WiFi.h>
+#include <esp_random.h>   // esp_random() for the fruit-tree variable-ratio spawn
 #include <NimBLEDevice.h>  // For BLE coexistence check
 #include "../core/config.h"
 #include "../core/sd_layout.h"
@@ -652,12 +653,15 @@ void DoNoHamMode::update() {
         bool isHunting = (state == DNHState::HUNTING);
         static bool hadTree = false;
         if (isHunting && !hadTree) {
-            uint8_t fruits = 0;
-            const auto& nets = NetworkRecon::getNetworks();
-            for (size_t i = 0; i < nets.size() && fruits < 8; i++) {
-                if (NetworkRecon::estimateClientCount(nets[i]) > 0) fruits++;
+            // ~40% chance to spawn tree — variable-ratio schedule makes trees noteworthy
+            if (esp_random() % 100 < 40) {
+                uint8_t fruits = 0;
+                const auto& nets = NetworkRecon::getNetworks();
+                for (size_t i = 0; i < nets.size() && fruits < 8; i++) {
+                    if (NetworkRecon::estimateClientCount(nets[i]) > 0) fruits++;
+                }
+                Avatar::showTree(fruits > 0 ? fruits : (uint8_t)1);
             }
-            Avatar::showTree(fruits > 0 ? fruits : (uint8_t)1);
         } else if (!isHunting && hadTree) {
             Avatar::hideTree();
         }

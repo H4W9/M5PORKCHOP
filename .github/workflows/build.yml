@@ -2,10 +2,19 @@ name: Build
 
 on:
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Create/refresh a GitHub release with the firmware'
+        type: boolean
+        default: false
   push:
     branches: [ main, develop, personality_disorder_innit, Pancake-Porkchop ]
+    tags: [ 'v*' ]          # a v* tag push also cuts a release
   pull_request:
     branches: [ main ]
+
+permissions:
+  contents: write           # needed by the (optional) release job
 
 jobs:
   build:
@@ -37,6 +46,11 @@ jobs:
         run: |
           pio run -e pancake
 
+      - name: Rename firmware -> porkchop_pancake.bin
+        run: |
+          cp .pio/build/pancake/firmware.bin .pio/build/pancake/porkchop_pancake.bin
+          ls -l .pio/build/pancake/porkchop_pancake.bin
+
       - name: Dump EFFECTIVE sdkconfig (verify custom_sdkconfig actually applied)
         if: always()
         run: |
@@ -66,8 +80,44 @@ jobs:
         with:
           name: firmware-pancake
           path: |
+            .pio/build/pancake/porkchop_pancake.bin
             .pio/build/pancake/firmware.bin
             .pio/build/pancake/firmware.elf
             .pio/build/pancake/firmware.map
             .pio/build/pancake/firmware.sym.txt
           retention-days: 30
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Optional release — on a v* tag push, or a manual run with release=true.
+  # Attaches porkchop_pancake.bin (+ the ELF for crash symbolization).
+  # ═══════════════════════════════════════════════════════════════════════════
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download firmware artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-pancake
+          path: dl
+
+      - name: Create / refresh release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            VER=$(sed -n 's/^[[:space:]]*custom_version[[:space:]]*=[[:space:]]*//p' platformio.ini | head -1)
+            TAG="v${VER}"
+          fi
+          echo "Releasing tag: $TAG"
+          gh release delete "$TAG" --yes || true
+          gh release create "$TAG" dl/porkchop_pancake.bin dl/firmware.elf \
+            --title "$TAG" \
+            --notes "Automated build of Porkchop Pancake $TAG." \
+            --target "${{ github.sha }}"
