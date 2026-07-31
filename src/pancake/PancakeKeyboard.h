@@ -65,6 +65,7 @@ struct PKey {
     char    ch;
     uint8_t code;
     int16_t x, y, w, h;
+    char    shiftedCh;   // char emitted/shown when shifted (0 = fall back to toupper(ch))
 };
 
 // ============================================================
@@ -122,7 +123,10 @@ public:
                 }
 
                 sp = k.code;
-                if (k.ch) ch = _shifted ? (char)toupper(k.ch) : k.ch;
+                if (k.ch) {
+                    if (_shifted) ch = k.shiftedCh ? k.shiftedCh : (char)toupper(k.ch);
+                    else          ch = k.ch;
+                }
                 return true;
             }
         }
@@ -140,7 +144,12 @@ private:
 
     void _add(char ch, uint8_t code, int16_t x, int16_t y, int16_t w, int16_t h) {
         if (_n >= MAX_KEYS) return;
-        _keys[_n++] = {ch, code, x, y, w, h};
+        _keys[_n++] = {ch, code, x, y, w, h, 0};
+    }
+    // Key with a shift alternate char (e.g. '-' / '=').
+    void _addS(char ch, char shiftedCh, int16_t x, int16_t y, int16_t w, int16_t h) {
+        if (_n >= MAX_KEYS) return;
+        _keys[_n++] = {ch, PKEY_NONE, x, y, w, h, shiftedCh};
     }
 
     void _build() {
@@ -150,15 +159,16 @@ private:
         const int rh = PANCAKE_KB_ROW_H;
         const int m  = PANCAKE_KB_MARGIN;
 
-        // Row 0: 1 2 3 4 5 6 7 8 9 0 - =  BKSP
+        // Row 0: 1 2 3 4 5 6 7 8 9 0  [-/=]  DEL(wide)
         {
-            const char *r = "1234567890-=";
-            int n = 12;
-            int w = (W - m) / (n + 1);  // +1 for wider BKSP
-            for (int i = 0; i < n; i++)
-                _add(r[i], PKEY_NONE, m + i*(w+m/2), y0, w-m/2, rh-m);
-            int bx = m + n*(w+m/2);
-            _add(0, PKEY_BKSP, bx, y0, W-bx-1, rh-m);
+            const char *r = "1234567890";
+            int wDel = 50;                               // big DEL
+            int w = (W - wDel - 12*m) / 11;              // 10 digits + 1 combined key
+            int y = y0;
+            int x = m;
+            for (int i = 0; i < 10; i++) { _add(r[i], PKEY_NONE, x, y, w, rh-m); x += w+m; }
+            _addS('-', '=', x, y, w, rh-m); x += w+m;    // '-' normal, '=' when shifted
+            _add(0, PKEY_BKSP, x, y, W-x-1, rh-m);       // DEL takes the rest
         }
         // Row 1: QWERTYUIOP
         {
@@ -169,41 +179,42 @@ private:
             for (int i = 0; i < n; i++)
                 _add(r[i], PKEY_NONE, m + i*(w+m), y, w, rh-m);
         }
-        // Row 2: ASDFGHJKL  ;(nav)  ENTER
+        // Row 2: ASDFGHJKL  ENTER(wide)
         {
             const char *r = "asdfghjkl";
             int n  = 9;
-            int wE = 36, wS = 28;
-            int w  = (W - (n+3)*m - wE - wS) / n;
+            int wE = 62;
+            int w  = (W - (n+2)*m - wE) / n;
             int y  = y0 + 2*rh;
             int x  = m;
             for (int i = 0; i < n; i++) { _add(r[i], PKEY_NONE, x, y, w, rh-m); x += w+m; }
-            _add(';', PKEY_SEMICOL, x, y, wS, rh-m); x += wS+m;
             _add(0, PKEY_ENTER, x, y, W-x-1, rh-m);
         }
-        // Row 3: SHIFT  ZXCVBNM  ,  .  /
+        // Row 3: SHIFT  ZXCVBNM  ;(UP)
         {
             const char *r = "zxcvbnm";
             int n   = 7;
-            int wSh = 30, wSp = 22;
-            int w   = (W - 2*m - wSh - 3*(wSp+m) - n*m) / n;
+            int wSh = 44, wUp = 44;
+            int w   = (W - 2*m - wSh - wUp - (n+1)*m) / n;
             int y   = y0 + 3*rh;
             _add(0, PKEY_SHIFT, m, y, wSh, rh-m);
             int x = m + wSh + m;
             for (int i = 0; i < n; i++) { _add(r[i], PKEY_NONE, x, y, w, rh-m); x += w+m; }
-            _add(',', PKEY_COMMA,  x, y, wSp, rh-m); x += wSp+m;
-            _add('.', PKEY_DOT,    x, y, wSp, rh-m); x += wSp+m;
-            _add('/', PKEY_SLASH,  x, y, wSp, rh-m);
+            _add(';', PKEY_SEMICOL, W-wUp-1, y, wUp, rh-m);   // UP at right edge
         }
-        // Row 4: `(back)  SPACE  p(screenshot)
+        // Row 4: `(back)  SPACE(small)  ,(<)  .(DN)  /(>)  p(shot)
         {
-            int y   = y0 + 4*rh;
-            int wBk = 36, wP = 36;
-            int spX = m + wBk + m;
-            int spW = W - spX - m - wP - m - 1;
-            _add('`', PKEY_BACKTICK, m,   y, wBk, rh-m);
-            _add(' ', PKEY_SPACE,    spX, y, spW, rh-m);
-            _add('p', PKEY_NONE,     W-wP-1, y, wP, rh-m);
+            int y    = y0 + 4*rh;
+            int wBk  = 44, wNav = 40, wP = 40;
+            int x    = m;
+            _add('`', PKEY_BACKTICK, x, y, wBk, rh-m); x += wBk + m;
+            int rightW = 3*wNav + wP + 4*m;              // , . / p + gaps
+            int spW    = W - x - rightW - 1;
+            _add(' ', PKEY_SPACE,  x, y, spW,  rh-m); x += spW  + m;
+            _add(',', PKEY_COMMA,  x, y, wNav, rh-m); x += wNav + m;
+            _add('.', PKEY_DOT,    x, y, wNav, rh-m); x += wNav + m;
+            _add('/', PKEY_SLASH,  x, y, wNav, rh-m);
+            _add('p', PKEY_NONE,   W-wP-1, y, wP, rh-m);
         }
     }
 
@@ -244,7 +255,9 @@ private:
             default: break;
         }
         if (k.ch) {
-            char c = _shifted ? (char)toupper(k.ch) : k.ch;
+            char c;
+            if (_shifted) c = k.shiftedCh ? k.shiftedCh : (char)toupper(k.ch);
+            else          c = k.ch;
             out[0] = c; out[1] = '\0';
         } else {
             strcpy(out, "?");

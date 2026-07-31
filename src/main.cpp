@@ -215,6 +215,12 @@ void setup() {
     // starts at the REAL value, not 100%. Without this, the EMA slowly
     // converges from 100% to reality, looking like a steady decline.
     HeapHealth::resetPeaks(true);
+
+    // Start the auto-dim countdown from HERE (boot complete), not from
+    // Display::init() — setup() runs for many seconds after that (WiFi
+    // conditioning, recon), which would otherwise let the screen dim to
+    // near-black almost immediately after the idle screen appears.
+    Display::resetDimTimer();
 }
 
 void loop() {

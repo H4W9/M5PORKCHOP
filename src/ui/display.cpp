@@ -498,6 +498,7 @@ void Display::update() {
     }
 
     if (!barsHidden) {
+        drawTopBar();     // status bar: mode + mood (left), battery/GPS/WiFi + time (right)
         drawBottomBar();
     }
     pushAll();
