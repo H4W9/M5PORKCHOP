@@ -37,9 +37,29 @@ jobs:
         run: |
           pio run -e pancake
 
+      - name: Generate symbol table (for crash-PC symbolization)
+        if: always()
+        run: |
+          ELF=.pio/build/pancake/firmware.elf
+          NM=$(find ~/.platformio/packages -name 'riscv32-esp-elf-nm' 2>/dev/null | head -1)
+          A2L=$(find ~/.platformio/packages -name 'riscv32-esp-elf-addr2line' 2>/dev/null | head -1)
+          echo "nm=$NM addr2line=$A2L elf=$ELF"
+          if [ -n "$NM" ] && [ -f "$ELF" ]; then
+            # Address-sorted, demangled, with sizes: find the symbol whose
+            # range contains a crash PC (e.g. 0x42085afa) by scanning this file.
+            "$NM" -nSC "$ELF" > .pio/build/pancake/firmware.sym.txt || true
+            echo "symbols: $(wc -l < .pio/build/pancake/firmware.sym.txt) lines"
+          fi
+
       - name: Upload firmware artifact (pancake)
         uses: actions/upload-artifact@v4
         with:
           name: firmware-pancake
-          path: .pio/build/pancake/firmware.bin
+          # Include the ELF and linker map so crash PCs can be symbolized
+          # (riscv addr2line firmware.elf 0x...) and section sizes inspected.
+          path: |
+            .pio/build/pancake/firmware.bin
+            .pio/build/pancake/firmware.elf
+            .pio/build/pancake/firmware.map
+            .pio/build/pancake/firmware.sym.txt
           retention-days: 30
