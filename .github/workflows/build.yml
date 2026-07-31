@@ -24,9 +24,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.platformio
-          key: pio-pancake-${{ hashFiles('platformio.ini') }}
+          # Prefix bumped to 55311 so caches from the old 'stable' platform
+          # are NOT restored (they would shadow the pinned IDF 5.5.5 install).
+          key: pio-pancake-55311-${{ hashFiles('platformio.ini') }}
           restore-keys: |
-            pio-pancake-
+            pio-pancake-55311-
 
       - name: Install PlatformIO
         run: |
