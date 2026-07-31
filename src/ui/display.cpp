@@ -530,15 +530,14 @@ void Display::pushAll() {
 
 #ifdef PORKCHOP_PANCAKE
     // The porkchop sprites only cover the top pane (y 0..DISPLAY_H); the keyboard
-    // pane (y DISPLAY_H..480) is not touched by them, so it does NOT need
-    // repainting every frame — doing so made the keyboard flicker constantly.
-    // Only repaint it when the mode changes (mode transitions may fillScreen).
-    static PorkchopMode lastKbMode = (PorkchopMode)0xFF;
+    // pane (y DISPLAY_H..480) is never touched by them or by menu transitions,
+    // so draw it ONCE and let it persist. Repainting per-frame flickered it;
+    // repainting on mode change flashed it when entering/exiting menus.
+    // (If a future full-screen op wipes the pane, call pancakeRedrawKeyboard()
+    //  explicitly from that op.)
     static bool kbDrawnOnce = false;
-    PorkchopMode kbMode = porkchop ? porkchop->getMode() : PorkchopMode::IDLE;
-    if (!kbDrawnOnce || kbMode != lastKbMode) {
+    if (!kbDrawnOnce) {
         kbDrawnOnce = true;
-        lastKbMode = kbMode;
         pancakeRedrawKeyboard();
     }
 #endif
