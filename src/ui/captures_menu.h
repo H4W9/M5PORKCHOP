@@ -59,7 +59,11 @@ private:
     static bool nukeConfirmActive;  // Nuke confirmation modal
     static bool detailViewActive;   // Password detail view
     
+#ifdef PORKCHOP_PANCAKE
+    static const uint8_t VISIBLE_ITEMS = 11;
+#else
     static const uint8_t VISIBLE_ITEMS = 5;
+#endif
     
     static bool scanCaptures();  // Returns true if successful, false if SD access failed
     static void handleInput();

@@ -93,8 +93,13 @@ private:
     static MenuCallback callback;
     static bool keyWasPressed;
     
+#ifdef PORKCHOP_PANCAKE
+    static const uint8_t VISIBLE_ITEMS = 10;  // taller Pancake canvas (212px)
+    static const uint8_t MODAL_VISIBLE = 9;
+#else
     static const uint8_t VISIBLE_ITEMS = 4;
     static const uint8_t MODAL_VISIBLE = 4;
+#endif
     static uint8_t rootHintIndex[];
     static uint8_t attackHintIndex[];
     static uint8_t reconHintIndex[];

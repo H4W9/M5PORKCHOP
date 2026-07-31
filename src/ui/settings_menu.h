@@ -46,8 +46,13 @@ private:
     static uint32_t origGpsBaud;
     static uint8_t origGpsSource;
 
+#ifdef PORKCHOP_PANCAKE
+    static const uint8_t VISIBLE_ROOT_ITEMS = 10;
+    static const uint8_t VISIBLE_GROUP_ITEMS = 10;
+#else
     static const uint8_t VISIBLE_ROOT_ITEMS = 5;
     static const uint8_t VISIBLE_GROUP_ITEMS = 4;
+#endif
     static const uint32_t AUTO_SAVE_MS = 3000;
 
     static void handleInput();

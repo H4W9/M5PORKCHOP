@@ -21,7 +21,11 @@ private:
     static bool keyWasPressed;
     static bool showingDetail;  // Showing achievement detail popup
     
+#ifdef PORKCHOP_PANCAKE
+    static const uint8_t VISIBLE_ITEMS = 10;
+#else
     static const uint8_t VISIBLE_ITEMS = 5;
+#endif
     
     static void handleInput();
     static void drawDetail(M5Canvas& canvas);

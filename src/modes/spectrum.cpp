@@ -26,8 +26,13 @@
 
 // Layout constants - spectrum + waterfall + channel labels + status bar
 const int SPECTRUM_LEFT = 20;       // Space for dB labels
+#ifdef PORKCHOP_PANCAKE
+const int SPECTRUM_RIGHT = 318;     // Full 320-wide Pancake canvas
+const int SPECTRUM_WIDTH = 298;     // SPECTRUM_RIGHT - SPECTRUM_LEFT
+#else
 const int SPECTRUM_RIGHT = 238;     // Right edge
 const int SPECTRUM_WIDTH = 218;     // SPECTRUM_RIGHT - SPECTRUM_LEFT
+#endif
 const int SPECTRUM_TOP = 2;         // Top margin
 const int SPECTRUM_BOTTOM = 56;     // Lowered to give more vertical range
 const int WATERFALL_TOP = 58;       // Waterfall starts here
@@ -1270,7 +1275,7 @@ void SpectrumMode::drawClientOverlay(M5Canvas& canvas) {
         
         // Highlight selected row
         if (selected) {
-            canvas.fillRect(0, y, 240, LINE_HEIGHT, COLOR_FG);
+            canvas.fillRect(0, y, canvas.width(), LINE_HEIGHT, COLOR_FG);
             canvas.setTextColor(COLOR_BG, COLOR_FG);
         } else {
             canvas.setTextColor(COLOR_FG, COLOR_BG);
@@ -1331,7 +1336,7 @@ void SpectrumMode::drawClientOverlay(M5Canvas& canvas) {
     if (revealingClients) {
         int boxW = 160;
         int boxH = 40;
-        int boxX = (240 - boxW) / 2;
+        int boxX = (canvas.width() - boxW) / 2;
         int boxY = (90 - boxH) / 2;
         
         // Black border then inverted fill

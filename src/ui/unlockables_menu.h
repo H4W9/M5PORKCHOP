@@ -39,5 +39,9 @@ private:
     static char textBuffer[33];
     static uint8_t textLen;
     
+#ifdef PORKCHOP_PANCAKE
+    static const uint8_t VISIBLE_ITEMS = 10;
+#else
     static const uint8_t VISIBLE_ITEMS = 5;
+#endif
 };
