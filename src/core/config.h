@@ -32,9 +32,15 @@ namespace CapLoraPins {
 // GPS power management settings
 struct GPSConfig {
     bool enabled = true;
+#ifdef PORKCHOP_PANCAKE
+    GPSSource source = GPSSource::GROVE;
+    uint8_t rxPin = 13;             // Pancake GPS on UART1 (ESP32Marauder MARAUDER_PANCAKE)
+    uint8_t txPin = 14;
+#else
     GPSSource source = GPSSource::GROVE;  // GPS module source (auto-selects pins)
     uint8_t rxPin = 1;              // G1 for Grove GPS, G15 for Cap LoRa868 (auto-set from source)
     uint8_t txPin = 2;              // G2 for Grove GPS, G13 for Cap LoRa868 (auto-set from source)
+#endif
     uint32_t baudRate = 115200;     // 115200 for most modern GPS modules
     uint16_t updateInterval = 5;        // Seconds between GPS updates
     uint16_t sleepTimeMs = 5000;        // Sleep duration when stationary

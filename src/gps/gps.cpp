@@ -6,6 +6,17 @@
 #include "../piglet/mood.h"
 #include "../ui/display.h"
 
+// Pancake (ESP32-C5) GPS is on UART1 with RX=13/TX=14 (per ESP32Marauder
+// MARAUDER_PANCAKE). Serial2 on the C5 is the LP-UART (pins 4/5 only) and
+// fails to start on GPS pins. Force the correct bus+pins on Pancake.
+#ifdef PORKCHOP_PANCAKE
+  #define GPS_UART   Serial1
+  #define GPS_FORCE_PINS(rx, tx) do { (rx) = 13; (tx) = 14; } while (0)
+#else
+  #define GPS_UART   Serial2
+  #define GPS_FORCE_PINS(rx, tx) do { } while (0)
+#endif
+
 // Static members
 TinyGPSPlus* GPS::gps = nullptr;
 HardwareSerial* GPS::serial = nullptr;
@@ -28,11 +39,11 @@ void GPS::init(uint8_t rxPin, uint8_t txPin, uint32_t baud) {
         mutex = xSemaphoreCreateMutex();
     }
     
-    // Use Serial2 for GPS (UART2)
-    Serial2.begin(baud, SERIAL_8N1, rxPin, txPin);
-    serial = &Serial2;
+    GPS_FORCE_PINS(rxPin, txPin);
+    GPS_UART.begin(baud, SERIAL_8N1, rxPin, txPin);
+    serial = &GPS_UART;
     active = true;
-    
+
     // Clear initial data - safe to use portMAX_DELAY during init (not a hot path, mutex just created)
     if (mutex && xSemaphoreTake(mutex, portMAX_DELAY)) {
         memset(&currentData, 0, sizeof(GPSData));
@@ -45,7 +56,7 @@ void GPS::init(uint8_t rxPin, uint8_t txPin, uint32_t baud) {
 void GPS::reinit(uint8_t rxPin, uint8_t txPin, uint32_t baud) {
     // Stop existing serial connection
     if (serial) {
-        Serial2.end();
+        GPS_UART.end();
         serial = nullptr;
         active = false;
     }
@@ -54,8 +65,9 @@ void GPS::reinit(uint8_t rxPin, uint8_t txPin, uint32_t baud) {
     delay(50);
     
     // Re-initialize with new parameters
-    Serial2.begin(baud, SERIAL_8N1, rxPin, txPin);
-    serial = &Serial2;
+    GPS_FORCE_PINS(rxPin, txPin);
+    GPS_UART.begin(baud, SERIAL_8N1, rxPin, txPin);
+    serial = &GPS_UART;
     active = true;
     
     // Reset GPS state - safe to use portMAX_DELAY during reinit (configuration path, not hot path)
@@ -179,7 +191,7 @@ void GPS::sleep() {
 
     // AT6668 (ATGM336H) does not support u-blox UBX protocol.
     // Stop UART to cease processing and reduce CPU overhead.
-    Serial2.end();
+    GPS_UART.end();
     serial = nullptr;
     active = false;
     Serial.println("[GPS] Entering sleep mode (UART stopped)");
@@ -193,8 +205,9 @@ void GPS::wake() {
     uint8_t rxPin = Config::gps().rxPin;
     uint8_t txPin = Config::gps().txPin;
     uint32_t baud = Config::gps().baudRate;
-    Serial2.begin(baud, SERIAL_8N1, rxPin, txPin);
-    serial = &Serial2;
+    GPS_FORCE_PINS(rxPin, txPin);
+    GPS_UART.begin(baud, SERIAL_8N1, rxPin, txPin);
+    serial = &GPS_UART;
     active = true;
     Serial.println("[GPS] Waking up (UART restarted)");
 }
@@ -206,8 +219,9 @@ void GPS::ensureContinuousMode() {
         uint8_t rxPin = Config::gps().rxPin;
         uint8_t txPin = Config::gps().txPin;
         uint32_t baud = Config::gps().baudRate;
-        Serial2.begin(baud, SERIAL_8N1, rxPin, txPin);
-        serial = &Serial2;
+        GPS_FORCE_PINS(rxPin, txPin);
+        GPS_UART.begin(baud, SERIAL_8N1, rxPin, txPin);
+        serial = &GPS_UART;
     }
     active = true;
     Serial.println("[GPS] Continuous mode enforced");
