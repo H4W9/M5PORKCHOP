@@ -449,6 +449,9 @@ TFT_eSPI::TFT_eSPI(int16_t w, int16_t h)
   rotation  = 0;
   cursor_y  = cursor_x  = last_cursor_x = bg_cursor_x = 0;
   textfont  = 1;
+#ifdef LOAD_GFXFF
+  gfxFont   = NULL;   // Must be initialised or textWidth()/drawChar() deref garbage
+#endif
   textsize  = 1;
   textcolor   = bitmap_fg = 0xFFFF; // White
   textbgcolor = bitmap_bg = 0x0000; // Black
