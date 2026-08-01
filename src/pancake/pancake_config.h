@@ -76,16 +76,14 @@
 #define PANCAKE_SCREEN_W  240
 #define PANCAKE_SCREEN_H  320
 
-// Overlay keyboard model: the porkchop content pane owns the top 256px; a
-// two-row nav/shortcut strip is pinned to the bottom 64px at all times (always
-// drivable). The full QWERTY overlays the lower content (y 106..256) only while
-// typing — toggled by the strip's ABC key — then hides.
-#define PANCAKE_PORK_H      256   // content pane height (topBar+main+bottomBar)
-#define PANCAKE_KB_STRIP_Y  256   // persistent nav/shortcut strip top edge
-#define PANCAKE_KB_STRIP_H   64   // persistent strip height (240x64, 2 rows)
-#define PANCAKE_KB_Y        106   // QWERTY overlay top edge (over lower content)
-#define PANCAKE_KB_H        150   // QWERTY overlay height (106..256, 5 rows)
-#define PANCAKE_KB_ROW_H     30
+// Same split model as Pancake, scaled for 240x320. The content pane is only
+// 135px (matches the avatar scene: MAIN_H=107, so the grass sits just above the
+// bottom bar with no empty space below it); the full Pancake keyboard fills the
+// bottom 185px (over half the screen), always visible.
+#define PANCAKE_PORK_H      135   // content pane (topBar 14 + main 107 + bottomBar 14)
+#define PANCAKE_KB_Y        135   // keyboard pane top edge
+#define PANCAKE_KB_H        185   // keyboard pane height (135..320)
+#define PANCAKE_KB_ROW_H     36   // 5 rows fit in 185px
 #define PANCAKE_KB_MARGIN     3
 
 #define PANCAKE_TOUCH_W   240
