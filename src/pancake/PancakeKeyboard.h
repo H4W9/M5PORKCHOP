@@ -1,19 +1,18 @@
 #pragma once
 // =============================================================
-//  PancakeKeyboard — touch QWERTY keyboard for PORKCHOP PANCAKE
+//  PancakeKeyboard — touch keyboard for the ESP32-C5 porkchop builds.
 //
-//  Rendered in the bottom 240 px of the 320x480 portrait screen.
+//  Pancake (ST7796 320x480): full QWERTY in the bottom 240 px, always visible.
+//  Marauder V8 (ILI9341 240x320): a persistent 2-row nav/shortcut STRIP pinned
+//    to the bottom 64 px, plus a full QWERTY OVERLAY (layer 1) that the strip's
+//    ABC key toggles on/off over the lower content. Same key set as Pancake.
 //
-//  Keys are coloured:
-//    RED   = attack/chaos shortcuts  (O B)
-//    GREEN = mode/nav shortcuts      (D W H F S T C 1 2 G
-//                                     ENTER BKSP ; . , / ` SPACE)
-//    WHITE = normal keys
+//  Keys carry a "layer": 0 = always visible (Pancake: everything; V8: strip),
+//  1 = overlay (V8 only, shown when _overlayShown).
 //
-//  API used by PancakeInput shim:
-//    begin(tft*)  — call once at startup, draws keyboard
-//    redraw()     — re-render full keyboard (call after screen clears)
-//    poll(ch, sp) — returns true + fills ch/sp when a key is tapped
+//  renderInto(tgt,yOff) redraws the currently-visible keys into any target
+//  (a sprite) so the full screen — keyboard included — can be screenshotted on
+//  panels whose framebuffer can't be read back.
 // =============================================================
 
 #include <Arduino.h>
@@ -33,6 +32,7 @@ enum PancakeSpecial : uint8_t {
     PKEY_COMMA   = 8,   // , — spectrum pan left
     PKEY_SLASH   = 9,   // / — spectrum pan right
     PKEY_SCREENSHOT = 10, // SCR — emits 'p' (screenshot) but labelled SCR, cyan
+    PKEY_ABC     = 11,  // V8 only: toggle the QWERTY overlay
 };
 
 // ---- Colour palette ----------------------------------------
@@ -72,70 +72,110 @@ struct PKey {
     uint8_t code;
     int16_t x, y, w, h;
     char    shiftedCh;   // char emitted/shown when shifted (0 = fall back to toupper(ch))
+    uint8_t layer;       // 0 = always visible, 1 = V8 overlay (shown when toggled)
 };
 
 // ============================================================
 class PancakeKeyboard {
 public:
-    void begin(TFT_eSPI *tft, FT6336Touch *touch) {
+    void begin(TFT_eSPI *tft, PancakeTouch *touch) {
         _tft = tft;
         _touch = touch;
         _shifted = false;
+        _overlayShown = false;
         _build();
     }
 
     // Full redraw — call after any screen wipe
     void redraw() {
         if (!_tft) return;
+#ifdef PORKCHOP_MARAUDER_V8
+        _tft->fillRect(0, PANCAKE_KB_STRIP_Y, PANCAKE_SCREEN_W, PANCAKE_KB_STRIP_H, KB_BG);
+        if (_overlayShown)
+            _tft->fillRect(0, PANCAKE_KB_Y, PANCAKE_SCREEN_W, PANCAKE_KB_H, KB_BG);
+#else
         _tft->fillRect(0, PANCAKE_KB_Y, PANCAKE_SCREEN_W, PANCAKE_KB_H, KB_BG);
-        for (int i = 0; i < _n; i++) _drawKey(i, false);
+#endif
+        for (int i = 0; i < _n; i++)
+            if (_visible(_keys[i])) _drawKeyTo(_tft, i, false, 0);
+    }
+
+    // Redraw the currently-visible keys into `tgt` (a sprite), each key's screen Y
+    // shifted by yOff. Templated so the sprite's (non-virtual) draw methods resolve
+    // to the sprite, not the display. Caller clears the sprite first. Used by the
+    // screenshot path so the keyboard is captured even though the panel can't be
+    // read back.
+    template<typename G>
+    void renderInto(G *tgt, int16_t yOff) {
+        if (!tgt) return;
+        for (int i = 0; i < _n; i++)
+            if (_visible(_keys[i])) _drawKeyTo(tgt, i, false, yOff);
+    }
+
+    // Topmost screen Y the keyboard currently occupies (overlay lowers it on V8).
+    int16_t screenshotTop() const {
+#ifdef PORKCHOP_MARAUDER_V8
+        return _overlayShown ? PANCAKE_KB_Y : PANCAKE_KB_STRIP_Y;
+#else
+        return PANCAKE_KB_Y;
+#endif
+    }
+
+    // True when the V8 QWERTY overlay is up (content render should freeze).
+    bool isOverlayActive() const {
+#ifdef PORKCHOP_MARAUDER_V8
+        return _overlayShown;
+#else
+        return false;
+#endif
     }
 
     // Poll for a key tap. Returns true when a key was pressed.
-    // ch  = character (0 if special-only key)
-    // sp  = PancakeSpecial code (PKEY_NONE if regular char)
     bool poll(char &ch, uint8_t &sp) {
         ch = 0; sp = PKEY_NONE;
         if (!_touch) return false;
 
-        // Clear an expired momentary highlight without blocking, so rapid taps
-        // aren't throttled by a delay() the way the old flash-then-repaint was.
+        // Clear an expired momentary highlight without blocking (fast taps).
         if (_pressedKey >= 0 && (millis() - _pressedAt) >= KB_PRESS_MS) {
-            _drawKey(_pressedKey, false);
+            _drawKeyTo(_tft, _pressedKey, false, 0);
             _pressedKey = -1;
         }
 
-        // Read the CURRENT touch directly. (Do not use isCurrentlyDown() —
-        // that returns _wasDown, which only isTouchDown() updates and nothing
-        // calls, so it was always false and no key ever registered.)
         PancakeTouchPoint tp;
         bool touched = _touch->getPoint(tp) && tp.valid;
-
-        if (!touched) {
-            _lastTouchDown = false;
-            return false;
-        }
+        if (!touched) { _lastTouchDown = false; return false; }
         if (_lastTouchDown) return false;  // only fire on new press
         _lastTouchDown = true;
 
+        // Reject touches outside the currently-active keyboard region(s).
+#ifdef PORKCHOP_MARAUDER_V8
+        bool inStrip   = tp.y >= PANCAKE_KB_STRIP_Y;
+        bool inOverlay = _overlayShown && tp.y >= PANCAKE_KB_Y && tp.y < PANCAKE_KB_STRIP_Y;
+        if (!inStrip && !inOverlay) return false;
+#else
         if (tp.y < PANCAKE_KB_Y) return false;
+#endif
 
         for (int i = 0; i < _n; i++) {
             PKey &k = _keys[i];
+            if (!_visible(k)) continue;
             if (tp.x >= k.x && tp.x < k.x + k.w &&
                 tp.y >= k.y && tp.y < k.y + k.h)
             {
-                // Clear any still-lit key from a previous fast tap, then flash
-                // this one. No delay() — the highlight is cleared by a later
-                // poll() once KB_PRESS_MS has elapsed.
-                if (_pressedKey >= 0 && _pressedKey != i) _drawKey(_pressedKey, false);
-                _drawKey(i, true);
+                if (_pressedKey >= 0 && _pressedKey != i) _drawKeyTo(_tft, _pressedKey, false, 0);
+                _drawKeyTo(_tft, i, true, 0);
                 _pressedKey = i;
                 _pressedAt  = millis();
 
                 if (k.code == PKEY_SHIFT) {
                     _shifted = !_shifted;
-                    redraw();            // full repaint clears the flash
+                    redraw();
+                    _pressedKey = -1;
+                    return false;
+                }
+                if (k.code == PKEY_ABC) {           // V8: toggle the QWERTY overlay
+                    _overlayShown = !_overlayShown;
+                    redraw();
                     _pressedKey = -1;
                     return false;
                 }
@@ -153,25 +193,105 @@ public:
 
 private:
     TFT_eSPI     *_tft   = nullptr;
-    FT6336Touch  *_touch = nullptr;
-    static const int MAX_KEYS = 70;
+    PancakeTouch *_touch = nullptr;
+    static const int MAX_KEYS = 80;
     PKey  _keys[MAX_KEYS];
     int   _n = 0;
     bool  _shifted = false;
+    bool  _overlayShown = false;
     bool  _lastTouchDown = false;
-    int      _pressedKey = -1;   // key currently flashed (-1 = none)
-    uint32_t _pressedAt  = 0;    // millis() when it was pressed
+    int      _pressedKey = -1;
+    uint32_t _pressedAt  = 0;
+
+    bool _visible(const PKey &k) const {
+#ifdef PORKCHOP_MARAUDER_V8
+        return (k.layer == 0) || (_overlayShown && k.layer == 1);
+#else
+        (void)k; return true;
+#endif
+    }
 
     void _add(char ch, uint8_t code, int16_t x, int16_t y, int16_t w, int16_t h) {
         if (_n >= MAX_KEYS) return;
-        _keys[_n++] = {ch, code, x, y, w, h, 0};
+        _keys[_n++] = {ch, code, x, y, w, h, 0, 0};
     }
-    // Key with a shift alternate char (e.g. '-' / '=').
     void _addS(char ch, char shiftedCh, int16_t x, int16_t y, int16_t w, int16_t h) {
         if (_n >= MAX_KEYS) return;
-        _keys[_n++] = {ch, PKEY_NONE, x, y, w, h, shiftedCh};
+        _keys[_n++] = {ch, PKEY_NONE, x, y, w, h, shiftedCh, 0};
+    }
+    // Layer-tagged variants (V8).
+    void _addL(char ch, uint8_t code, uint8_t layer, int16_t x, int16_t y, int16_t w, int16_t h) {
+        if (_n >= MAX_KEYS) return;
+        _keys[_n++] = {ch, code, x, y, w, h, 0, layer};
+    }
+    void _addLS(char ch, char shiftedCh, uint8_t layer, int16_t x, int16_t y, int16_t w, int16_t h) {
+        if (_n >= MAX_KEYS) return;
+        _keys[_n++] = {ch, PKEY_NONE, x, y, w, h, shiftedCh, layer};
     }
 
+#ifdef PORKCHOP_MARAUDER_V8
+    void _build() {
+        _n = 0;
+        const int W = PANCAKE_SCREEN_W;   // 240
+        const int m = PANCAKE_KB_MARGIN;  // 3
+
+        // ---- Persistent strip (layer 0): 2 rows at the bottom ----
+        const int sh = 30;                            // strip key height
+        // Row A (nav): < DN UP > ENT DEL ` SCR ABC  (9 keys)
+        {
+            int y = PANCAKE_KB_STRIP_Y + 1;
+            int n = 9;
+            int w = (W - (n + 1) * m) / n;
+            int x = m;
+            _addL(',', PKEY_COMMA,      0, x, y, w, sh); x += w + m;
+            _addL('.', PKEY_DOT,        0, x, y, w, sh); x += w + m;
+            _addL(';', PKEY_SEMICOL,    0, x, y, w, sh); x += w + m;
+            _addL('/', PKEY_SLASH,      0, x, y, w, sh); x += w + m;
+            _addL(0,   PKEY_ENTER,      0, x, y, w, sh); x += w + m;
+            _addL(0,   PKEY_BKSP,       0, x, y, w, sh); x += w + m;
+            _addL('`', PKEY_BACKTICK,   0, x, y, w, sh); x += w + m;
+            _addL('p', PKEY_SCREENSHOT, 0, x, y, w, sh); x += w + m;
+            _addL(0,   PKEY_ABC,        0, x, y, w, sh);
+        }
+        // Row B (shortcuts): O B D W H F S T C G 1 2  (12 keys)
+        {
+            const char *r = "obdwhfstcg12";
+            int y = PANCAKE_KB_STRIP_Y + 1 + 32;
+            int n = 12;
+            int w = (W - (n + 1) * m) / n;
+            int x = m;
+            for (int i = 0; i < n; i++) { _addL(r[i], PKEY_NONE, 0, x, y, w, sh); x += w + m; }
+        }
+
+        // ---- QWERTY overlay (layer 1): 5 rows over lower content ----
+        const int oy = PANCAKE_KB_Y + 1;
+        const int rh = PANCAKE_KB_ROW_H;              // 30
+        // Row 0: digits
+        { const char *r = "1234567890"; int n = 10; int w = (W - (n + 1) * m) / n; int x = m; int y = oy;
+          for (int i = 0; i < n; i++) { _addL(r[i], PKEY_NONE, 1, x, y, w, rh - m); x += w + m; } }
+        // Row 1: qwertyuiop
+        { const char *r = "qwertyuiop"; int n = 10; int w = (W - (n + 1) * m) / n; int x = m; int y = oy + rh;
+          for (int i = 0; i < n; i++) { _addL(r[i], PKEY_NONE, 1, x, y, w, rh - m); x += w + m; } }
+        // Row 2: asdfghjkl
+        { const char *r = "asdfghjkl"; int n = 9; int w = (W - (n + 1) * m) / n; int x = m; int y = oy + 2 * rh;
+          for (int i = 0; i < n; i++) { _addL(r[i], PKEY_NONE, 1, x, y, w, rh - m); x += w + m; } }
+        // Row 3: SHFT z x c v b n m DEL  (9 cells)
+        { int y = oy + 3 * rh; int n = 9; int w = (W - (n + 1) * m) / n; int x = m;
+          _addL(0, PKEY_SHIFT, 1, x, y, w, rh - m); x += w + m;
+          const char *r = "zxcvbnm";
+          for (int i = 0; i < 7; i++) { _addL(r[i], PKEY_NONE, 1, x, y, w, rh - m); x += w + m; }
+          _addL(0, PKEY_BKSP, 1, x, y, w, rh - m); }
+        // Row 4: -/=  SPACE(wide)  ,  .
+        { int y = oy + 4 * rh; int x = m;
+          int wk = 34;
+          _addLS('-', '=', 1, x, y, wk, rh - m); x += wk + m;   // '-' / '='
+          int wPunct = 34;
+          int spW = W - m - x - 2 * (wPunct + m);
+          _addL(' ', PKEY_SPACE, 1, x, y, spW, rh - m); x += spW + m;
+          _addL(',', PKEY_NONE,  1, x, y, wPunct, rh - m); x += wPunct + m;
+          _addL('.', PKEY_NONE,  1, x, y, wPunct, rh - m); }
+    }
+#else
     void _build() {
         _n = 0;
         const int W  = PANCAKE_SCREEN_W;
@@ -210,9 +330,7 @@ private:
             for (int i = 0; i < n; i++) { _add(r[i], PKEY_NONE, x, y, w, rh-m); x += w+m; }
             _add(0, PKEY_ENTER, x, y, W-x-1, rh-m);
         }
-        // Right-aligned nav column, shared by rows 3 & 4:
-        //   row 4: ... SCR  <   DN   >
-        //   row 3: ...      (SHIFT above >, UP above DN)
+        // Right-aligned nav column, shared by rows 3 & 4.
         const int wNav = 40;
         const int gtX  = W - wNav - 1;          // '>'   (rightmost)
         const int dnX  = gtX  - (wNav + m);     // 'DN'  (.)
@@ -223,7 +341,7 @@ private:
         {
             const char *r = "zxcvbnm";
             int n = 7;
-            int w = 30;                          // fixed so letters end before UP
+            int w = 30;
             int y = y0 + 3*rh;
             int x = m;
             for (int i = 0; i < n; i++) { _add(r[i], PKEY_NONE, x, y, w, rh-m); x += w+m; }
@@ -236,7 +354,7 @@ private:
             int wBk = 44;
             _add('`', PKEY_BACKTICK, m, y, wBk, rh-m);
             int spX = m + wBk + m;
-            int spW = scrX - m - spX;                      // SPACE fills up to SCR
+            int spW = scrX - m - spX;
             _add(' ', PKEY_SPACE,     spX,  y, spW,  rh-m);
             _add('p', PKEY_SCREENSHOT, scrX, y, wNav, rh-m); // SCR (cyan; emits 'p')
             _add(',', PKEY_COMMA,     ltX,  y, wNav, rh-m); // <
@@ -244,29 +362,35 @@ private:
             _add('/', PKEY_SLASH,     gtX,  y, wNav, rh-m); // >
         }
     }
+#endif
 
-    void _drawKey(int i, bool pressed) {
+    // Draw key i into target g (screen or sprite), with y shifted by yOff.
+    // Templated so sprite targets call the sprite's own (non-virtual) methods.
+    template<typename G>
+    void _drawKeyTo(G *g, int i, bool pressed, int16_t yOff) {
         PKey &k = _keys[i];
+        int16_t ky = k.y + yOff;
         int sc = kbShortcutClass(k.ch, k.code);
         uint16_t fill   = pressed ? KB_KEY_PRS : KB_KEY_NRM;
         uint16_t textcol= pressed ? KB_TEXT
                         : (k.code == PKEY_SCREENSHOT ? KB_CYAN
-                        : (sc == 2 ? KB_RED : (sc == 1 ? KB_GREEN : KB_TEXT)));
+                        : (k.code == PKEY_ABC ? KB_CYAN
+                        : (sc == 2 ? KB_RED : (sc == 1 ? KB_GREEN : KB_TEXT))));
 
-        _tft->fillRect(k.x, k.y, k.w, k.h, fill);
-        _tft->drawRect(k.x, k.y, k.w, k.h, KB_BORDER);
+        g->fillRect(k.x, ky, k.w, k.h, fill);
+        g->drawRect(k.x, ky, k.w, k.h, KB_BORDER);
 
         char label[8];
         _label(k, label);
 
-        _tft->setTextColor(textcol, fill);
-        _tft->setTextSize(1);
-        _tft->setTextFont(2);  // 16pt
+        g->setTextColor(textcol, fill);
+        g->setTextSize(1);
+        g->setTextFont(2);  // 16pt
 
-        int tw = _tft->textWidth(label);
-        int th = _tft->fontHeight();
-        _tft->setCursor(k.x + (k.w - tw)/2, k.y + (k.h - th)/2);
-        _tft->print(label);
+        int tw = g->textWidth(label);
+        int th = g->fontHeight();
+        g->setCursor(k.x + (k.w - tw)/2, ky + (k.h - th)/2);
+        g->print(label);
     }
 
     void _label(const PKey &k, char *out) {
@@ -281,6 +405,7 @@ private:
             case PKEY_COMMA:    strcpy(out, ",/<");   return;
             case PKEY_SLASH:    strcpy(out, "//>"); return;
             case PKEY_SCREENSHOT: strcpy(out, "SCR"); return;
+            case PKEY_ABC:      strcpy(out, "ABC");   return;
             default: break;
         }
         if (k.ch) {

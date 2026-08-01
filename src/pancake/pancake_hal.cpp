@@ -9,7 +9,7 @@
 #include "pancake_hal_impl.h"
 
 // ---- Hardware object pointers (null until pancakeHalInit()) ----------------
-FT6336Touch*     pancakeTouch    = nullptr;
+PancakeTouch*    pancakeTouch    = nullptr;   // FT6336 (Pancake) or XPT2046 (V8)
 PancakeKeyboard* pancakeKeyboard = nullptr;
 TFT_eSPI*        pancakeTFT      = nullptr;
 
@@ -82,15 +82,20 @@ namespace PancakeKB {
 // ---- Keyboard redraw helper -------------------------------------------------
 void pancakeRedrawKeyboard() {
     if (!pancakeTFT || !pancakeKeyboard) return;
+#ifdef PORKCHOP_MARAUDER_V8
+    // Separator sits above the persistent strip (the overlay has its own edge).
+    pancakeTFT->drawFastHLine(0, PANCAKE_KB_STRIP_Y - 1, PANCAKE_SCREEN_W, 0x528A);
+#else
     pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y - 1, PANCAKE_SCREEN_W, 0x528A);
     pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y,     PANCAKE_SCREEN_W, 0x528A);
+#endif
     pancakeKeyboard->redraw();
 }
 
 // ---- One-time hardware init — call from setup() BEFORE M5Cardputer.begin() -
 void pancakeHalInit() {
     pancakeTFT      = new TFT_eSPI();
-    pancakeTouch    = new FT6336Touch();
+    pancakeTouch    = new PancakeTouch();   // FT6336 (Pancake) / XPT2046 (V8)
     pancakeKeyboard = new PancakeKeyboard();
     pancakeM5Cardputer = new M5Cardputer_Class();
     pancakeM5          = new M5Unified_Class();

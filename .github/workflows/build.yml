@@ -87,6 +87,34 @@ jobs:
             .pio/build/pancake/firmware.sym.txt
           retention-days: 30
 
+      # ── Marauder V8 (in-progress port) ────────────────────────────────────
+      # Non-blocking: the overlay keyboard UI (stage 4) isn't done, so this may
+      # still fail or boot with an unusable keyboard. It exists so the V8 target
+      # is exercised by CI and a binary is available to validate display + touch.
+      - name: Build firmware (marauder_v8)
+        id: build_v8
+        continue-on-error: true
+        run: |
+          pio run -e marauder_v8
+
+      - name: Rename firmware -> porkchop_v8.bin
+        if: steps.build_v8.outcome == 'success'
+        run: |
+          cp .pio/build/marauder_v8/firmware.bin .pio/build/marauder_v8/porkchop_v8.bin
+          ls -l .pio/build/marauder_v8/porkchop_v8.bin
+
+      - name: Upload firmware artifact (marauder_v8)
+        if: steps.build_v8.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-marauder_v8
+          path: |
+            .pio/build/marauder_v8/porkchop_v8.bin
+            .pio/build/marauder_v8/firmware.bin
+            .pio/build/marauder_v8/firmware.elf
+            .pio/build/marauder_v8/firmware.map
+          retention-days: 30
+
   # ═══════════════════════════════════════════════════════════════════════════
   # Optional release — on a v* tag push, or a manual run with release=true.
   # Attaches porkchop_pancake.bin (+ the ELF for crash symbolization).

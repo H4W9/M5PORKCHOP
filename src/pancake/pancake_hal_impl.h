@@ -47,11 +47,15 @@ struct lgfxFont_t {};
 #include <WiFi.h>
 
 #include "pancake_config.h"
-#include "FT6336Touch.h"
+#ifdef PORKCHOP_MARAUDER_V8
+  #include "XPT2046Touch.h"     // resistive touch (aliases PancakeTouch)
+#else
+  #include "FT6336Touch.h"      // capacitive touch (aliases PancakeTouch)
+#endif
 #include "PancakeKeyboard.h"
 
 // ---- Global hardware objects (defined in pancake_hal.cpp) ---
-extern FT6336Touch*     pancakeTouch;
+extern PancakeTouch*    pancakeTouch;
 extern PancakeKeyboard* pancakeKeyboard;
 extern TFT_eSPI*        pancakeTFT;
 
@@ -282,15 +286,31 @@ struct M5Cardputer_Class {
         Serial.println("[HAL] TFT init complete, BL on");
         Serial.flush();
 
+#ifdef PORKCHOP_MARAUDER_V8
+        // XPT2046 touch shares the display SPI bus (no I2C), so start I2C here
+        // for the MAX17048 battery gauge that Config/Power expect on the bus.
+        Wire.begin(PANCAKE_I2C_SDA, PANCAKE_I2C_SCL);
+        pancakeTouch->begin();   // loads calibration if stored
+        if (!pancakeTouch->isCalibrated()) {
+            // Resistive panel is unusable uncalibrated — run the one-time corner
+            // calibration on first boot, then persist it to SPIFFS.
+            Serial.println("[HAL] V8 first-boot touch calibration");
+            pancakeTouch->calibrate();
+            pancakeTFT->fillScreen(TFT_BLACK);
+        }
+#else
         if (!pancakeTouch->begin()) {
             Serial.println("[PANCAKE] FT6336 not found");
         }
+#endif
 
         pancakeKeyboard->begin(pancakeTFT, pancakeTouch);
         pancakeKeyboard->redraw();
 
+#ifndef PORKCHOP_MARAUDER_V8
         pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y - 1, PANCAKE_SCREEN_W, 0x528A);
         pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y,     PANCAKE_SCREEN_W, 0x528A);
+#endif
 
         // SD is mounted by Config::init() (dedicated SPI bus, correct pins,
         // multi-speed retry). Do not SD.begin() here.
@@ -325,12 +345,31 @@ extern M5Unified_Class*   pancakeM5;
 #define M5Cardputer (*pancakeM5Cardputer)
 #define M5          (*pancakeM5)
 
-// ---- neopixelWrite pin remap --------------------------------
+// ---- LED write abstraction ----------------------------------
 #include <esp32-hal-rgb-led.h>
 #ifdef LED_PIN
 #undef LED_PIN
 #endif
 #define LED_PIN PANCAKE_LED_PIN
+
+// pancakeLedWrite(): board-agnostic LED write used by Display::setLED().
+//   Pancake — addressable RGB via neopixelWrite (RMT).
+//   V8      — single blue LED on GPIO28, a STRAPPING pin, so drive it as a plain
+//             digital output only: no LEDC/PWM on the strap, no pad-hold, so a
+//             reset always releases it to its pull-up and boots normally
+//             (matches ESP32_FlipSocial's ACT_LED handling). Any non-zero colour
+//             = on. Armed once, lazily.
+#ifdef PORKCHOP_MARAUDER_V8
+static inline void pancakeLedWrite(uint8_t r, uint8_t g, uint8_t b) {
+    static bool armed = false;
+    if (!armed) { pinMode(PANCAKE_LED_PIN, OUTPUT); armed = true; }
+    digitalWrite(PANCAKE_LED_PIN, (r || g || b) ? HIGH : LOW);
+}
+#else
+static inline void pancakeLedWrite(uint8_t r, uint8_t g, uint8_t b) {
+    neopixelWrite(PANCAKE_LED_PIN, r, g, b);
+}
+#endif
 
 // ---- Keyboard redraw helper --------------------------------
 void pancakeHalInit();        // Call from setup() before M5Cardputer.begin()
