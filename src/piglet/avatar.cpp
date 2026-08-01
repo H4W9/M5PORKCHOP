@@ -871,7 +871,7 @@ void Avatar::drawStars(M5Canvas& canvas) {
     if (!starsActive || starCount == 0) return;
 
     uint32_t now = millis();
-    uint16_t fg = getDrawColor();
+    uint16_t fg = realActive() ? REAL_STAR : getDrawColor();  // warm starlight in Realistic
     canvas.setTextSize(1);
     canvas.setTextColor(fg);
     canvas.setTextDatum(top_left);

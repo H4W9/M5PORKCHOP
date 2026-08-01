@@ -70,6 +70,7 @@ static const uint16_t REAL_FRUIT         = 0xE186; // apple red (fill)
 static const uint16_t REAL_FRUIT_OUTLINE = 0x7882; // dark red (outline)
 static const uint16_t REAL_CLOUD_FAIR    = 0x867D; // sky blue (nice weather)
 static const uint16_t REAL_CLOUD_STORM   = 0x8410; // grey (stormy)
+static const uint16_t REAL_STAR          = 0xFEA0; // warm yellow-orange starlight
 
 // Dynamic color getters (use these instead of macros)
 uint16_t getColorFG();
