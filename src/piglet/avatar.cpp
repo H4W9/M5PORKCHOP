@@ -1033,18 +1033,18 @@ void Avatar::generateTree(uint8_t fruitCount) {
     treeScrollOffset = 0;
     uint32_t s = treeSeed;
 
-    // Position: opposite side from pig (adjusted for 320px)
+    // Position: opposite side from pig (screen-relative; at 320 == 33-72 / 248-287)
     if (onRightSide) {
-        treeTrunk.baseX = 33 + (int16_t)(treeLCG(s) % 40);  // 33-72
+        treeTrunk.baseX = 33 + (int16_t)(treeLCG(s) % 40);                 // left
     } else {
-        treeTrunk.baseX = 248 + (int16_t)(treeLCG(s) % 40);  // 248-287
+        treeTrunk.baseX = (DISPLAY_W - 72) + (int16_t)(treeLCG(s) % 40);   // near right edge
     }
 
     // Ensure minimum gap from pig
     int16_t gap = abs(treeTrunk.baseX - currentX);
     if (gap < 60) {
-        treeTrunk.baseX = (currentX < 160) ? 240 + (int16_t)(treeLCG(s) % 40)
-                                            : 33 + (int16_t)(treeLCG(s) % 40);
+        treeTrunk.baseX = (currentX < DISPLAY_W / 2) ? (DISPLAY_W - 80) + (int16_t)(treeLCG(s) % 40)
+                                                     : 33 + (int16_t)(treeLCG(s) % 40);
     }
 
     // Trunk dimensions — proportional to 107px canvas
@@ -1607,7 +1607,7 @@ void Avatar::drawTree(M5Canvas& canvas) {
         if (!fruitSplashes[i].active) continue;
         int spx = snapPx((int16_t)fruitSplashes[i].x);
         int spy = snapPx((int16_t)fruitSplashes[i].y);
-        if (spx < 0 || spx >= 320) continue;
+        if (spx < 0 || spx >= DISPLAY_W) continue;
         if ((float)(now - fruitSplashes[i].spawnTime) / 500.0f >= 1.0f) continue;
         canvas.fillRect(spx, spy, PX, PX, splashCol);
     }
