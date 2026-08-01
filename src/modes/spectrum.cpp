@@ -699,12 +699,19 @@ void SpectrumMode::handleInput() {
     
     auto keys = M5Cardputer.Keyboard.keysState();
     
-    // Pan spectrum with , (left) and / (right)
+    // Pan spectrum with , (left) and / (right).
+    // On dual-band Pancake there is a big empty gap between the 2.4 GHz top
+    // (~2483 MHz) and the 5 GHz bottom (ch36 = 5180 MHz) — jump across it
+    // instead of scrolling through dead air.
     if (M5Cardputer.Keyboard.isKeyPressed(',')) {
-        viewCenterMHz = fmax(MIN_CENTER_MHZ, viewCenterMHz - PAN_STEP_MHZ);
+        viewCenterMHz -= PAN_STEP_MHZ;
+        if (viewCenterMHz > 2483.0f && viewCenterMHz < 5180.0f) viewCenterMHz = 2472.0f;
+        viewCenterMHz = fmax(MIN_CENTER_MHZ, viewCenterMHz);
     }
     if (M5Cardputer.Keyboard.isKeyPressed('/')) {
-        viewCenterMHz = fmin(MAX_CENTER_MHZ, viewCenterMHz + PAN_STEP_MHZ);
+        viewCenterMHz += PAN_STEP_MHZ;
+        if (viewCenterMHz > 2483.0f && viewCenterMHz < 5180.0f) viewCenterMHz = 5180.0f;
+        viewCenterMHz = fmin(MAX_CENTER_MHZ, viewCenterMHz);
     }
     
     // F key: cycle filter mode

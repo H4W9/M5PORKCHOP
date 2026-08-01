@@ -1357,6 +1357,18 @@ static void fatFruit(M5Canvas& canvas, int16_t cx, int16_t cy, int r,
 void Avatar::drawTree(M5Canvas& canvas) {
     updateTree();
 
+    // --- Drift the tree toward the trotting pig so it actually gets shaken ---
+    // The original coupled treeScrollOffset to the grass scroll (world moving
+    // under the walking pig); the Pancake grass is ASCII with no pixel scroll,
+    // so we drift the tree toward the pig's body centre while it's moving.
+    if ((treePhase == TreePhase::ALIVE || treePhase == TreePhase::GROWING) &&
+        (grassMoving || transitioning)) {
+        int16_t treeX = treeTrunk.baseX + treeScrollOffset;
+        int16_t pigCenter = currentX + 54;
+        if (treeX > pigCenter + treeTrunk.crownRadius) treeScrollOffset -= 1;
+        else if (treeX < pigCenter - treeTrunk.crownRadius) treeScrollOffset += 1;
+    }
+
     // --- Pig-tree collision: when the pig walks up to the tree it shakes ---
     treeColliding = false;
     treeCollisionShake = 0;
