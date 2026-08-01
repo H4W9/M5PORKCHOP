@@ -127,11 +127,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download firmware artifact
+      - name: Download firmware artifact (pancake)
         uses: actions/download-artifact@v4
         with:
           name: firmware-pancake
           path: dl
+
+      - name: Download firmware artifact (marauder_v8)
+        uses: actions/download-artifact@v4
+        continue-on-error: true   # V8 build is non-blocking; may not exist
+        with:
+          name: firmware-marauder_v8
+          path: dl_v8
 
       - name: Create / refresh release
         env:
@@ -144,8 +151,12 @@ jobs:
             TAG="v${VER}"
           fi
           echo "Releasing tag: $TAG"
+          # Attach Pancake always; attach V8 bin + elf if the build produced them.
+          ASSETS="dl/porkchop_pancake.bin dl/firmware.elf"
+          [ -f dl_v8/porkchop_v8.bin ] && ASSETS="$ASSETS dl_v8/porkchop_v8.bin"
+          [ -f dl_v8/firmware.elf ]    && ASSETS="$ASSETS dl_v8/firmware.elf#porkchop_v8.elf"
           gh release delete "$TAG" --yes || true
-          gh release create "$TAG" dl/porkchop_pancake.bin dl/firmware.elf \
+          gh release create "$TAG" $ASSETS \
             --title "$TAG" \
-            --notes "Automated build of Porkchop Pancake $TAG." \
+            --notes "Automated build of Porkchop Pancake + Marauder V8 $TAG." \
             --target "${{ github.sha }}"
