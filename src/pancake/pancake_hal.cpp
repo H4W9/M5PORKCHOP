@@ -82,13 +82,8 @@ namespace PancakeKB {
 // ---- Keyboard redraw helper -------------------------------------------------
 void pancakeRedrawKeyboard() {
     if (!pancakeTFT || !pancakeKeyboard) return;
-#ifdef PORKCHOP_MARAUDER_V8
-    // Separator sits above the persistent strip (the overlay has its own edge).
-    pancakeTFT->drawFastHLine(0, PANCAKE_KB_STRIP_Y - 1, PANCAKE_SCREEN_W, 0x528A);
-#else
     pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y - 1, PANCAKE_SCREEN_W, 0x528A);
     pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y,     PANCAKE_SCREEN_W, 0x528A);
-#endif
     pancakeKeyboard->redraw();
 }
 

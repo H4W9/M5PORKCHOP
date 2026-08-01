@@ -534,12 +534,6 @@ void Display::clear() {
 }
 
 void Display::pushAll() {
-#ifdef PORKCHOP_MARAUDER_V8
-    // While the V8 QWERTY overlay is up it owns the lower screen; freeze the
-    // content push so the sprites don't paint over it. Resumes (repainting the
-    // overlay region) once the overlay is dismissed.
-    if (pancakeKeyboard && pancakeKeyboard->isOverlayActive()) return;
-#endif
     M5.Display.startWrite();
     topBar->pushSprite(0, 0);
     mainCanvas->pushSprite(0, TOP_BAR_H);
@@ -1344,7 +1338,11 @@ void Display::showBootSplash() {
     disp.drawString("PORKCHOP", DISPLAY_W/2, DISPLAY_H/2 - 15);
     disp.setTextSize(1);
     disp.drawString("BASICALLY YOU, BUT AS AN ASCII PIG.", DISPLAY_W/2, DISPLAY_H/2 + 20);
+#ifdef PORKCHOP_MARAUDER_V8
+    disp.drawString("V8 EDITION.", DISPLAY_W/2, DISPLAY_H/2 + 35);
+#else
     disp.drawString("PANCAKE EDITION.", DISPLAY_W/2, DISPLAY_H/2 + 35);
+#endif
     bootSplashDelay(1200);
     const char* cs = Config::personality().callsign;
     if (cs[0] != '\0') {

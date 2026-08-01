@@ -620,7 +620,7 @@ void Menu::drawModal(M5Canvas& canvas) {
     uint16_t bg = getColorBG();
     
     // Modal dimensions - Sirloin-style
-#ifdef PORKCHOP_PANCAKE
+#if defined(PORKCHOP_PANCAKE) && !defined(PORKCHOP_MARAUDER_V8)
     int boxW = 240;
     int boxH = 28 + MODAL_VISIBLE * 16;   // fits MODAL_VISIBLE rows on the taller canvas
 #else

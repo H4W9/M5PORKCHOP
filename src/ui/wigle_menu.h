@@ -52,7 +52,7 @@ private:
     static bool detailViewActive;   // File detail view
     static bool nukeConfirmActive;  // Nuke confirmation modal
     
-#ifdef PORKCHOP_PANCAKE
+#if defined(PORKCHOP_PANCAKE) && !defined(PORKCHOP_MARAUDER_V8)
     static const uint8_t VISIBLE_ITEMS = 10;
 #else
     static const uint8_t VISIBLE_ITEMS = 5;

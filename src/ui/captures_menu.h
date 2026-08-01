@@ -59,7 +59,7 @@ private:
     static bool nukeConfirmActive;  // Nuke confirmation modal
     static bool detailViewActive;   // Password detail view
     
-#ifdef PORKCHOP_PANCAKE
+#if defined(PORKCHOP_PANCAKE) && !defined(PORKCHOP_MARAUDER_V8)
     static const uint8_t VISIBLE_ITEMS = 11;
 #else
     static const uint8_t VISIBLE_ITEMS = 5;

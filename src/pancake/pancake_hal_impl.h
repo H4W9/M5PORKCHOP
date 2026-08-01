@@ -307,10 +307,8 @@ struct M5Cardputer_Class {
         pancakeKeyboard->begin(pancakeTFT, pancakeTouch);
         pancakeKeyboard->redraw();
 
-#ifndef PORKCHOP_MARAUDER_V8
         pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y - 1, PANCAKE_SCREEN_W, 0x528A);
         pancakeTFT->drawFastHLine(0, PANCAKE_KB_Y,     PANCAKE_SCREEN_W, 0x528A);
-#endif
 
         // SD is mounted by Config::init() (dedicated SPI bus, correct pins,
         // multi-speed retry). Do not SD.begin() here.

@@ -46,7 +46,7 @@ private:
     static uint32_t origGpsBaud;
     static uint8_t origGpsSource;
 
-#ifdef PORKCHOP_PANCAKE
+#if defined(PORKCHOP_PANCAKE) && !defined(PORKCHOP_MARAUDER_V8)
     static const uint8_t VISIBLE_ROOT_ITEMS = 10;
     static const uint8_t VISIBLE_GROUP_ITEMS = 10;
 #else
