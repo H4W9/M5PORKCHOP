@@ -55,12 +55,30 @@ enum class NoticeChannel : uint8_t {
 };
 
 // Theme count and extern declaration (actual array in display.cpp)
-static const uint8_t THEME_COUNT = 15;
+static const uint8_t THEME_COUNT = 16;
 extern const PorkTheme THEMES[THEME_COUNT];
+
+// "Realistic" theme: unlike the mono themes, the avatar/weather draw each scene
+// element in its own natural colour. When this theme is active the element
+// getters below return these; otherwise everything falls back to fg/bg.
+static const uint8_t  REALISTIC_THEME_INDEX = 15;
+static const uint16_t REAL_PIG           = 0xFDB8; // light pig pink
+static const uint16_t REAL_GRASS         = 0x4D6A; // grass green
+static const uint16_t REAL_TRUNK         = 0x6A04; // bark brown
+static const uint16_t REAL_LEAF          = 0x2C45; // forest-green crown/leaves
+static const uint16_t REAL_FRUIT         = 0xE186; // apple red (fill)
+static const uint16_t REAL_FRUIT_OUTLINE = 0x7882; // dark red (outline)
+static const uint16_t REAL_CLOUD_FAIR    = 0x867D; // sky blue (nice weather)
+static const uint16_t REAL_CLOUD_STORM   = 0x8410; // grey (stormy)
 
 // Dynamic color getters (use these instead of macros)
 uint16_t getColorFG();
 uint16_t getColorBG();
+
+// True when the Realistic multi-colour theme is selected.
+bool isRealisticTheme();
+// Cloud colour: sky-blue in fair weather, grey in storm (Realistic only; else fg).
+uint16_t getCloudColor();
 
 // Compatibility macros - redirect to getters
 #define COLOR_BG getColorBG()

@@ -70,6 +70,12 @@ static uint16_t getBGColor() {
     return getColorBG();
 }
 
+// True when the Realistic theme should tint scene elements. Suppressed during a
+// thunder flash so the whole scene still inverts to the mono flash colour.
+static inline bool realActive() {
+    return !thunderFlashActive && isRealisticTheme();
+}
+
 // Grass animation state
 bool Avatar::grassMoving = false;
 bool Avatar::grassDirection = true;  // true = grass scrolls right
@@ -495,8 +501,8 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
 
     canvas.setTextDatum(top_left);
     canvas.setTextSize(3);
-    canvas.setTextColor(getDrawColor());  // Thunder-aware color
-    
+    canvas.setTextColor(realActive() ? REAL_PIG : getDrawColor());  // pink pig in Realistic
+
     uint32_t now = millis();
     
     // Watchdog: if caller stops refreshing attack shake, auto-disable after 250ms
@@ -738,9 +744,9 @@ void Avatar::drawGrass(M5Canvas& canvas) {
     updateGrass();
     
     canvas.setTextSize(2);  // Same as menu items
-    canvas.setTextColor(getDrawColor());  // Thunder-aware color
+    canvas.setTextColor(realActive() ? REAL_GRASS : getDrawColor());  // green grass in Realistic
     canvas.setTextDatum(top_left);
-    
+
     // Draw at bottom of avatar area, full screen width
     int grassY = 91;  // Below the pig face (at edge of main canvas)
     canvas.drawString(grassPattern, 0, grassY);
@@ -1396,6 +1402,14 @@ void Avatar::drawTree(M5Canvas& canvas) {
 
     uint16_t fg = getDrawColor();
     uint16_t bg = getBGColor();
+    // Realistic palette: brown trunk, green crown, red fruit. Falls back to the
+    // mono fg/bg so every other theme is unchanged.
+    bool     real       = realActive();
+    uint16_t trunkCol   = real ? REAL_TRUNK         : fg;
+    uint16_t leafCol    = real ? REAL_LEAF          : fg;   // crown/branches
+    uint16_t fruitFill  = real ? REAL_FRUIT         : bg;
+    uint16_t fruitLine  = real ? REAL_FRUIT_OUTLINE : fg;
+    uint16_t splashCol  = real ? REAL_FRUIT         : fg;
     uint32_t now = millis();
 
     const int16_t baseY = 106;
@@ -1448,7 +1462,7 @@ void Avatar::drawTree(M5Canvas& canvas) {
                 int hwFat = 1 + (int)(t * 1.0f + 0.5f);
                 int16_t h = (row + PX > trunkH) ? (trunkH - row) : PX;
                 for (int dx = -hwFat; dx <= hwFat; dx++) {
-                    canvas.fillRect(snapPx(bx + rowLean) + dx * PX, trunkTop + row, PX, h, fg);
+                    canvas.fillRect(snapPx(bx + rowLean) + dx * PX, trunkTop + row, PX, h, trunkCol);
                 }
             }
         }
@@ -1482,7 +1496,7 @@ void Avatar::drawTree(M5Canvas& canvas) {
         int16_t ex = sx + (int16_t)((float)(fullEx - sx) * branchProgress);
         int16_t ey = sy + (int16_t)((float)(fullEy - sy) * branchProgress);
 
-        fatLine(canvas, sx, sy, ex, ey, fg);
+        fatLine(canvas, sx, sy, ex, ey, leafCol);
     }
 
     // --- Phase 3: Fruits (growth 0.75 - 1.0) ---
@@ -1517,7 +1531,7 @@ void Avatar::drawTree(M5Canvas& canvas) {
                 fy += bob;
             }
 
-            fatFruit(canvas, fx, fy, f.radius, bg, fg);
+            fatFruit(canvas, fx, fy, f.radius, fruitFill, fruitLine);
         }
     }
 
@@ -1549,7 +1563,7 @@ void Avatar::drawTree(M5Canvas& canvas) {
             continue;
         }
 
-        fatFruit(canvas, droppingFruits[i].x, currentY, droppingFruits[i].radius, bg, fg);
+        fatFruit(canvas, droppingFruits[i].x, currentY, droppingFruits[i].radius, fruitFill, fruitLine);
     }
 
     // --- Fruit splash particles (burst on ground impact) ---
@@ -1570,7 +1584,7 @@ void Avatar::drawTree(M5Canvas& canvas) {
         int spy = snapPx((int16_t)fruitSplashes[i].y);
         if (spx < 0 || spx >= 320) continue;
         if ((float)(now - fruitSplashes[i].spawnTime) / 500.0f >= 1.0f) continue;
-        canvas.fillRect(spx, spy, PX, PX, fg);
+        canvas.fillRect(spx, spy, PX, PX, splashCol);
     }
 }
 

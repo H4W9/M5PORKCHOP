@@ -64,6 +64,9 @@ const PorkTheme THEMES[THEME_COUNT] = {
     {"L1TTL3M1XY", 0x0360, 0x95AA}, // OG Game Boy LCD - RGB332-quantized
     {"B4NSH33",   0x27E0, 0x0000},  // P1 phosphor green CRT - RGB332-quantized
     {"M1XYL1TTL3", 0x95AA, 0x0360}, // Inverted Game Boy LCD - RGB332-quantized
+    // Index 15: Realistic - white UI base; avatar draws each element in its own
+    // natural colour (see REAL_* in display.h). Must stay last (REALISTIC_THEME_INDEX).
+    {"R34L1ST1C", 0xFFFF, 0x0000},
 };
 
 uint16_t getColorFG() {
@@ -76,6 +79,15 @@ uint16_t getColorBG() {
     uint8_t idx = Config::personality().themeIndex;
     if (idx >= THEME_COUNT) idx = 0;
     return THEMES[idx].bg;
+}
+
+bool isRealisticTheme() {
+    return Config::personality().themeIndex == REALISTIC_THEME_INDEX;
+}
+
+uint16_t getCloudColor() {
+    if (!isRealisticTheme()) return getColorFG();
+    return Weather::isRaining() ? REAL_CLOUD_STORM : REAL_CLOUD_FAIR;
 }
 
 static void getSystemTimeString(char* out, size_t len) {
@@ -351,7 +363,7 @@ void Display::update() {
             // Draw piglet avatar
             Avatar::draw(*mainCanvas);
             // Draw clouds above stars/pig before rain
-            Weather::drawClouds(*mainCanvas, COLOR_FG);
+            Weather::drawClouds(*mainCanvas, getCloudColor());
             // Draw weather effects (rain, wind particles) over avatar
             Weather::draw(*mainCanvas, COLOR_FG, COLOR_BG);
             // Draw mood bubble LAST so it's always on top
@@ -365,7 +377,7 @@ void Display::update() {
             // Draw piglet avatar
             Avatar::draw(*mainCanvas);
             // Draw clouds above stars/pig before rain
-            Weather::drawClouds(*mainCanvas, COLOR_FG);
+            Weather::drawClouds(*mainCanvas, getCloudColor());
             // Draw weather effects (rain, wind particles) over avatar
             Weather::draw(*mainCanvas, COLOR_FG, COLOR_BG);
             // Draw mood bubble LAST so it's always on top
