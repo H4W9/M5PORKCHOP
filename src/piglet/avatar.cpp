@@ -1256,9 +1256,10 @@ void Avatar::dropFruit() {
     const TreeFruit& f = treeFruits[idx];
 
     const int16_t baseY = 106;
+    const int16_t WRAP_HI = DISPLAY_W + 20, WRAP_LO = -80, WRAP_SPAN = WRAP_HI - WRAP_LO;
     int16_t bx = treeTrunk.baseX + treeScrollOffset;
-    while (bx > 340) bx -= 420;    // 320px wrap bounds
-    while (bx < -80) bx += 420;
+    while (bx > WRAP_HI) bx -= WRAP_SPAN;    // screen-relative wrap
+    while (bx < WRAP_LO) bx += WRAP_SPAN;
 
     // Ambient sway (match drawTree logic)
     int8_t sway = 0;
@@ -1363,25 +1364,49 @@ static void fatFruit(M5Canvas& canvas, int16_t cx, int16_t cy, int r,
 void Avatar::drawTree(M5Canvas& canvas) {
     updateTree();
 
-    // --- Drift the tree toward the trotting pig so it actually gets shaken ---
-    // The original coupled treeScrollOffset to the grass scroll (world moving
-    // under the walking pig); the Pancake grass is ASCII with no pixel scroll,
-    // so we drift the tree toward the pig's body centre while it's moving.
+    // World-scroll wrap bounds, screen-relative so the tree isn't parked
+    // off-screen on the narrow V8 panel (320-wide Pancake: 340/-80/420).
+    const int16_t WRAP_HI   = DISPLAY_W + 20;
+    const int16_t WRAP_LO   = -80;
+    const int16_t WRAP_SPAN = WRAP_HI - WRAP_LO;
+
+    // --- Scroll the tree WITH the walking world (original behaviour) ---
+    // The tree is part of the landscape the pig treads through: it scrolls at the
+    // grass rate in the grass direction and wraps (below), so it passes the pig —
+    // which shakes it on contact — from EITHER side. (The port's old "drift toward
+    // the pig centre" only ever let left-side trees reach the pig, and left the
+    // far/off-screen right-side trees, so the pig never shook them.)
+    static uint32_t lastTreeScrollMs = 0;
+    static float    treeScrollAccum  = 0.0f;
     if ((treePhase == TreePhase::ALIVE || treePhase == TreePhase::GROWING) &&
         (grassMoving || transitioning)) {
-        int16_t treeX = treeTrunk.baseX + treeScrollOffset;
-        int16_t pigCenter = currentX + 54;
-        if (treeX > pigCenter + treeTrunk.crownRadius) treeScrollOffset -= 1;
-        else if (treeX < pigCenter - treeTrunk.crownRadius) treeScrollOffset += 1;
+        uint32_t nowMs = millis();
+        if (lastTreeScrollMs == 0) lastTreeScrollMs = nowMs;
+        uint32_t dt = nowMs - lastTreeScrollMs;
+        lastTreeScrollMs = nowMs;
+        if (dt > 50) dt = 50;   // cap so a long stall can't teleport the tree
+        // Grass advances ~12px (one size-2 char) every grassSpeed ms; match it.
+        float step = (12.0f / (float)(grassSpeed ? grassSpeed : 80)) * (float)dt;
+        treeScrollAccum += grassDirection ? step : -step;  // true=world scrolls right
+        int16_t whole = (int16_t)treeScrollAccum;
+        if (whole != 0) {
+            treeScrollAccum  -= whole;
+            treeScrollOffset += whole;
+            while (treeScrollOffset >  WRAP_SPAN) treeScrollOffset -= WRAP_SPAN;
+            while (treeScrollOffset < -WRAP_SPAN) treeScrollOffset += WRAP_SPAN;
+        }
+    } else {
+        lastTreeScrollMs = 0;
+        treeScrollAccum  = 0.0f;
     }
 
-    // --- Pig-tree collision: when the pig walks up to the tree it shakes ---
+    // --- Pig-tree collision: when a tree scrolls onto the pig it shakes ---
     treeColliding = false;
     treeCollisionShake = 0;
     if (treePhase == TreePhase::ALIVE || treePhase == TreePhase::GROWING) {
         int16_t tbx = treeTrunk.baseX + treeScrollOffset;
-        while (tbx > 340) tbx -= 420;
-        while (tbx < -80) tbx += 420;
+        while (tbx > WRAP_HI) tbx -= WRAP_SPAN;
+        while (tbx < WRAP_LO) tbx += WRAP_SPAN;
         int16_t treeLeft  = tbx - treeTrunk.crownRadius;
         int16_t treeRight = tbx + treeTrunk.crownRadius;
         int16_t pigL = currentX + 18;
@@ -1414,9 +1439,9 @@ void Avatar::drawTree(M5Canvas& canvas) {
 
     const int16_t baseY = 106;
     int16_t bx = treeTrunk.baseX + treeScrollOffset;
-    // Wrap to screen bounds (320px)
-    while (bx > 340) bx -= 420;
-    while (bx < -80) bx += 420;
+    // Wrap to screen bounds (screen-relative)
+    while (bx > WRAP_HI) bx -= WRAP_SPAN;
+    while (bx < WRAP_LO) bx += WRAP_SPAN;
 
     // Ambient sway when alive: ±1 fat pixel, 3s period triangle wave
     int8_t sway = 0;
