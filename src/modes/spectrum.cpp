@@ -58,6 +58,15 @@ const float MAX_CENTER_MHZ = 2472.0f;      // Channel 13
 const float BAND_MIN_MHZ = 2400.0f;        // 2.4GHz band edge (approx)
 const float BAND_MAX_MHZ = 2483.5f;        // 2.4GHz band edge (approx)
 const float LOBE_HALF_WIDTH_MHZ = 15.0f;   // Gaussian half-width
+
+// Valid Wi-Fi channel? 2.4 GHz (1-14) or, on dual-band Pancake, 5 GHz (36-177).
+static inline bool isScanChannel(int ch) {
+#ifdef PORKCHOP_PANCAKE
+    return (ch >= 1 && ch <= 14) || (ch >= 36 && ch <= 177);
+#else
+    return (ch >= 1 && ch <= 14);
+#endif
+}
 const float LOBE_STEP_MHZ = 0.5f;          // Frequency step for lobe drawing
 const float PAN_STEP_MHZ = 5.0f;           // One channel per pan
 
@@ -214,7 +223,7 @@ static inline int8_t smoothIIR(int8_t current, int8_t sample, uint8_t alpha) {
 }
 
 static void updateChannelStats(uint8_t channel, int8_t rssi) {
-    if (channel < 1 || channel > 13) return;
+    if (channel < 1 || channel >= CHANNEL_SLOTS) return;  // 2.4GHz activity meter only
 
     if (channelActivity[channel] < 0xFFFFFFFFu) {
         channelActivity[channel]++;
@@ -1866,7 +1875,7 @@ void SpectrumMode::onBeacon(const uint8_t* bssid, uint8_t channel, bool channelT
     if (busy) return;
     
     // Validate inputs to prevent crashes
-    if (!bssid || channel < 1 || channel > 13) return;
+    if (!bssid || !isScanChannel(channel)) return;
     
     bool hasSSID = (ssid && ssid[0] != 0);
     
@@ -2047,7 +2056,7 @@ void SpectrumMode::promiscuousCallback(const wifi_promiscuous_pkt_t* pkt, wifi_p
     uint16_t len = pkt->rx_ctrl.sig_len;
     int8_t rssi = pkt->rx_ctrl.rssi;
     uint8_t rxChannel = pkt->rx_ctrl.channel;
-    if (rxChannel < 1 || rxChannel > 13) rxChannel = currentChannel;
+    if (!isScanChannel(rxChannel)) rxChannel = currentChannel;  // keep valid 5GHz rx channel
     
     updateChannelStats(rxChannel, rssi);
     
@@ -2099,8 +2108,9 @@ void SpectrumMode::promiscuousCallback(const wifi_promiscuous_pkt_t* pkt, wifi_p
     bool channelTrusted = (dsChannel >= 1 && dsChannel <= 13);
     uint8_t channel = channelTrusted ? dsChannel : rxChannel;
     
-    // Validate channel range (after DS channel override)
-    if (channel < 1 || channel > 13) return;
+    // Validate channel range (after DS channel override). 5GHz beacons carry no
+    // DS Param, so channel falls back to rxChannel (e.g. 36) — accept those too.
+    if (!isScanChannel(channel)) return;
     
     // Parse auth mode from RSN (0x30) and WPA (0xDD) IEs
     wifi_auth_mode_t authmode = WIFI_AUTH_OPEN;  // Default to open
