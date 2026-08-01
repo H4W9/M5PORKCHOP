@@ -3165,20 +3165,46 @@ bool Display::takeScreenshot() {
         line_data[i] = 0;
     }
     
-    // BMP stores bottom-to-top, so read from bottom up
+    // BMP stores bottom-to-top, so read from bottom up.
+#ifdef PORKCHOP_PANCAKE
+    // The ST7796 does not support reliable SPI pixel read-back (readRectRGB
+    // returns corrupt data). Instead, read directly from the in-memory sprite
+    // buffers that make up the porkchop pane (topBar / mainCanvas / bottomBar).
+    // Each is 16bpp RGB565; convert to 24-bit BGR for the BMP.
+    for (int y = image_height - 1; y >= 0; y--) {
+        for (int x = 0; x < image_width; x++) {
+            uint16_t c = 0;
+            if (y < TOP_BAR_H) {
+                if (topBar) c = topBar->readPixel(x, y);
+            } else if (y < TOP_BAR_H + MAIN_H) {
+                if (mainCanvas) c = mainCanvas->readPixel(x, y - TOP_BAR_H);
+            } else {
+                if (bottomBar) c = bottomBar->readPixel(x, y - TOP_BAR_H - MAIN_H);
+            }
+            uint8_t r = (uint8_t)(((c >> 11) & 0x1F) * 255 / 31);
+            uint8_t g = (uint8_t)(((c >> 5)  & 0x3F) * 255 / 63);
+            uint8_t b = (uint8_t)(( c        & 0x1F) * 255 / 31);
+            line_data[x * 3 + 0] = b;   // BMP is BGR
+            line_data[x * 3 + 1] = g;
+            line_data[x * 3 + 2] = r;
+        }
+        file.write(line_data, image_width * 3 + pad);
+    }
+#else
     for (int y = image_height - 1; y >= 0; y--) {
         // Read one line of RGB data from display
         M5.Display.readRectRGB(0, y, image_width, 1, line_data);
-        
+
         // Swap R and B, BMP uses BGR order
         for (int x = 0; x < image_width; x++) {
             unsigned char temp = line_data[x * 3];
             line_data[x * 3] = line_data[x * 3 + 2];
             line_data[x * 3 + 2] = temp;
         }
-        
+
         file.write(line_data, image_width * 3 + pad);
     }
+#endif
     
     file.close();
     
