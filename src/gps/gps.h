@@ -51,8 +51,12 @@ private:
     static uint32_t fixCount;
     static uint32_t lastFixTime;
     static uint32_t lastUpdateTime;
+    static uint32_t detectedBaud;   // Baud that yielded valid NMEA (0 = unknown)
     static SemaphoreHandle_t mutex;
-    
+
     static void processSerial();
     static void updateData();
+    // Auto-detect the GPS baud (module boots at 9600, may be forced to 115200).
+    static bool probeBaud(uint32_t baud, uint8_t rxPin, uint8_t txPin);
+    static uint32_t detectBaud(uint8_t rxPin, uint8_t txPin);
 };

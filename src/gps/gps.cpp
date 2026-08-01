@@ -6,12 +6,15 @@
 #include "../piglet/mood.h"
 #include "../ui/display.h"
 
-// Pancake (ESP32-C5) GPS is on UART1 with RX=13/TX=14 (per ESP32Marauder
-// MARAUDER_PANCAKE). Serial2 on the C5 is the LP-UART (pins 4/5 only) and
-// fails to start on GPS pins. Force the correct bus+pins on Pancake.
+// Pancake (ESP32-C5) GPS is on UART1. ESP RX = GPIO14, ESP TX = GPIO13.
+// ESP32Marauder MARAUDER_PANCAKE names its macros from the GPS module's side
+// (GPS_TX=14, GPS_RX=13) and passes them as begin(baud, cfg, GPS_TX, GPS_RX),
+// i.e. the ESP receives on 14 (wired to the module TX) and transmits on 13.
+// Serial2 on the C5 is the LP-UART (pins 4/5 only) and fails on GPS pins, so
+// force the correct bus+pins on Pancake. (Arduino begin() is rxPin, then txPin.)
 #ifdef PORKCHOP_PANCAKE
   #define GPS_UART   Serial1
-  #define GPS_FORCE_PINS(rx, tx) do { (rx) = 13; (tx) = 14; } while (0)
+  #define GPS_FORCE_PINS(rx, tx) do { (rx) = 14; (tx) = 13; } while (0)
 #else
   #define GPS_UART   Serial2
   #define GPS_FORCE_PINS(rx, tx) do { } while (0)
@@ -25,7 +28,53 @@ GPSData GPS::currentData = {0};
 uint32_t GPS::fixCount = 0;
 uint32_t GPS::lastFixTime = 0;
 uint32_t GPS::lastUpdateTime = 0;
+uint32_t GPS::detectedBaud = 0;
 SemaphoreHandle_t GPS::mutex = nullptr;
+
+// Listen at `baud` for ~1.2s; true once we see a '$' and TinyGPS parses a valid
+// (checksum-passing) sentence — proof this baud is correct. Mirrors ESP32Marauder.
+bool GPS::probeBaud(uint32_t baud, uint8_t rxPin, uint8_t txPin) {
+    if (!gps) gps = new TinyGPSPlus();
+    GPS_UART.end();
+    delay(50);
+    GPS_UART.begin(baud, SERIAL_8N1, rxPin, txPin);
+
+    uint32_t start = millis();
+    bool sawDollar = false;
+    uint32_t baseChecksums = gps->passedChecksum();
+    while (millis() - start < 1200) {
+        while (GPS_UART.available()) {
+            char c = GPS_UART.read();
+            if (c == '$') sawDollar = true;
+            gps->encode(c);
+            if (sawDollar && gps->passedChecksum() > baseChecksums) return true;
+        }
+        delay(1);
+    }
+    return false;
+}
+
+// Try 115200, then 9600 (factory default) and force the module up to 115200 via
+// the PCAS command, then 38400. Returns the working baud (0 if none). On return
+// the UART is left open at that baud. Mirrors ESP32Marauder's probe order.
+uint32_t GPS::detectBaud(uint8_t rxPin, uint8_t txPin) {
+    if (probeBaud(115200, rxPin, txPin)) return 115200;
+
+    if (probeBaud(9600, rxPin, txPin)) {
+        // AT6558/ATGM336H: switch to 115200 baud, then confirm it took.
+        GPS_UART.print("$PCAS01,5*19\r\n");
+        GPS_UART.flush();
+        delay(200);
+        if (probeBaud(115200, rxPin, txPin)) return 115200;
+        probeBaud(9600, rxPin, txPin);   // revert listener to the working baud
+        return 9600;
+    }
+
+    if (probeBaud(38400, rxPin, txPin)) return 38400;
+
+    probeBaud(9600, rxPin, txPin);       // leave port open at a sane default
+    return 0;
+}
 
 void GPS::init(uint8_t rxPin, uint8_t txPin, uint32_t baud) {
     // GPS source now auto-configured via GPSSource enum in config
@@ -40,7 +89,22 @@ void GPS::init(uint8_t rxPin, uint8_t txPin, uint32_t baud) {
     }
     
     GPS_FORCE_PINS(rxPin, txPin);
+
+#ifdef PORKCHOP_PANCAKE
+    // Built-in module boots at 9600 but may already be at 115200 (e.g. after
+    // Marauder ran). Probe for the real baud instead of trusting a fixed value.
+    // (Gated to Pancake: a probe would stall boot ~4s on boards with no GPS.)
+    uint32_t detected = detectBaud(rxPin, txPin);
+    detectedBaud = detected;
+    uint32_t useBaud = detected ? detected : baud;
+    GPS_UART.end();
+    delay(50);
+    GPS_UART.begin(useBaud, SERIAL_8N1, rxPin, txPin);
+    Serial.printf("[GPS] RX=%d TX=%d, detected baud=%lu (using %lu)\n",
+                  rxPin, txPin, detected, useBaud);
+#else
     GPS_UART.begin(baud, SERIAL_8N1, rxPin, txPin);
+#endif
     serial = &GPS_UART;
     active = true;
 
@@ -64,9 +128,18 @@ void GPS::reinit(uint8_t rxPin, uint8_t txPin, uint32_t baud) {
     // Small delay to let hardware settle
     delay(50);
     
-    // Re-initialize with new parameters
+    // Re-initialize with new parameters (re-detect baud since pins may have changed)
     GPS_FORCE_PINS(rxPin, txPin);
+#ifdef PORKCHOP_PANCAKE
+    uint32_t detected = detectBaud(rxPin, txPin);
+    detectedBaud = detected;
+    uint32_t useBaud = detected ? detected : baud;
+    GPS_UART.end();
+    delay(50);
+    GPS_UART.begin(useBaud, SERIAL_8N1, rxPin, txPin);
+#else
     GPS_UART.begin(baud, SERIAL_8N1, rxPin, txPin);
+#endif
     serial = &GPS_UART;
     active = true;
     
@@ -202,9 +275,10 @@ void GPS::wake() {
 
     // Restart UART to resume GPS data processing.
     // AT6668 (ATGM336H) runs continuously — re-opening the port is sufficient.
+    // Reuse the detected baud (module keeps its baud while the UART is closed).
     uint8_t rxPin = Config::gps().rxPin;
     uint8_t txPin = Config::gps().txPin;
-    uint32_t baud = Config::gps().baudRate;
+    uint32_t baud = detectedBaud ? detectedBaud : Config::gps().baudRate;
     GPS_FORCE_PINS(rxPin, txPin);
     GPS_UART.begin(baud, SERIAL_8N1, rxPin, txPin);
     serial = &GPS_UART;
@@ -218,7 +292,7 @@ void GPS::ensureContinuousMode() {
     if (!serial) {
         uint8_t rxPin = Config::gps().rxPin;
         uint8_t txPin = Config::gps().txPin;
-        uint32_t baud = Config::gps().baudRate;
+        uint32_t baud = detectedBaud ? detectedBaud : Config::gps().baudRate;
         GPS_FORCE_PINS(rxPin, txPin);
         GPS_UART.begin(baud, SERIAL_8N1, rxPin, txPin);
         serial = &GPS_UART;

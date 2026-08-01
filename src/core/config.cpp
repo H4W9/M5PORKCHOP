@@ -524,7 +524,11 @@ bool Config::applyJson(const JsonDocument& doc) {
     // GPS config
     if (doc["gps"].is<JsonObject>()) {
         gpsConfig.enabled = doc["gps"]["enabled"] | true;
+#ifdef PORKCHOP_PANCAKE
+        gpsConfig.source = static_cast<GPSSource>(doc["gps"]["gpsSource"] | (int)GPSSource::CUSTOM);
+#else
         gpsConfig.source = static_cast<GPSSource>(doc["gps"]["gpsSource"] | 0);
+#endif
 
         // Auto-set pins based on source, or load custom pins
         if (gpsConfig.source == GPSSource::CAP_LORA) {
@@ -534,9 +538,14 @@ bool Config::applyJson(const JsonDocument& doc) {
             gpsConfig.rxPin = 1;   // Grove GPS RX
             gpsConfig.txPin = 2;   // Grove GPS TX
         } else {
-            // CUSTOM: load pins from config
+            // CUSTOM: load pins from config (Pancake defaults to its UART1 pins)
+#ifdef PORKCHOP_PANCAKE
+            gpsConfig.rxPin = doc["gps"]["rxPin"] | 14;
+            gpsConfig.txPin = doc["gps"]["txPin"] | 13;
+#else
             gpsConfig.rxPin = doc["gps"]["rxPin"] | 1;
             gpsConfig.txPin = doc["gps"]["txPin"] | 2;
+#endif
         }
 
         gpsConfig.baudRate = doc["gps"]["baudRate"] | 115200;

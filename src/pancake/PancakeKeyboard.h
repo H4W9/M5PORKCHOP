@@ -38,12 +38,16 @@ enum PancakeSpecial : uint8_t {
 // ---- Colour palette ----------------------------------------
 static const uint16_t KB_BG      = TFT_BLACK;
 static const uint16_t KB_KEY_NRM = 0x2104;   // dark grey
-static const uint16_t KB_KEY_PRS = 0x4208;   // pressed (lighter)
+static const uint16_t KB_KEY_PRS = 0x8410;   // pressed: lighter grey (more visible)
 static const uint16_t KB_BORDER  = 0x528A;
 static const uint16_t KB_TEXT    = TFT_WHITE;
 static const uint16_t KB_RED     = TFT_RED;
 static const uint16_t KB_GREEN   = TFT_GREEN;
 static const uint16_t KB_CYAN    = TFT_CYAN;
+
+// How long a tapped key stays highlighted (ms). Non-blocking — cleared on a
+// later poll(), so it never slows down rapid successive taps.
+static const uint32_t KB_PRESS_MS = 90;
 
 // ---- Shortcut classification --------------------------------
 // Returns 0=normal 1=green(nav) 2=red(attack)
@@ -94,6 +98,13 @@ public:
         ch = 0; sp = PKEY_NONE;
         if (!_touch) return false;
 
+        // Clear an expired momentary highlight without blocking, so rapid taps
+        // aren't throttled by a delay() the way the old flash-then-repaint was.
+        if (_pressedKey >= 0 && (millis() - _pressedAt) >= KB_PRESS_MS) {
+            _drawKey(_pressedKey, false);
+            _pressedKey = -1;
+        }
+
         // Read the CURRENT touch directly. (Do not use isCurrentlyDown() —
         // that returns _wasDown, which only isTouchDown() updates and nothing
         // calls, so it was always false and no key ever registered.)
@@ -114,13 +125,18 @@ public:
             if (tp.x >= k.x && tp.x < k.x + k.w &&
                 tp.y >= k.y && tp.y < k.y + k.h)
             {
+                // Clear any still-lit key from a previous fast tap, then flash
+                // this one. No delay() — the highlight is cleared by a later
+                // poll() once KB_PRESS_MS has elapsed.
+                if (_pressedKey >= 0 && _pressedKey != i) _drawKey(_pressedKey, false);
                 _drawKey(i, true);
-                delay(35);
-                _drawKey(i, false);
+                _pressedKey = i;
+                _pressedAt  = millis();
 
                 if (k.code == PKEY_SHIFT) {
                     _shifted = !_shifted;
-                    redraw();
+                    redraw();            // full repaint clears the flash
+                    _pressedKey = -1;
                     return false;
                 }
 
@@ -143,6 +159,8 @@ private:
     int   _n = 0;
     bool  _shifted = false;
     bool  _lastTouchDown = false;
+    int      _pressedKey = -1;   // key currently flashed (-1 = none)
+    uint32_t _pressedAt  = 0;    // millis() when it was pressed
 
     void _add(char ch, uint8_t code, int16_t x, int16_t y, int16_t w, int16_t h) {
         if (_n >= MAX_KEYS) return;
