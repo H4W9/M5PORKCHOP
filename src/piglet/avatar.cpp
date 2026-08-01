@@ -82,7 +82,20 @@ bool Avatar::grassDirection = true;  // true = grass scrolls right
 bool Avatar::pendingGrassStart = false;  // Wait for transition before starting grass
 uint32_t Avatar::lastGrassUpdate = 0;
 uint16_t Avatar::grassSpeed = 80;  // Default fast for OINK
-char Avatar::grassPattern[32] = {0};
+Avatar::GrassBlade Avatar::grassBlades[Avatar::GRASS_BLADE_MAX] = {};
+int16_t Avatar::grassOffset = 0;
+
+// Trail particle system (dust kicked up by the running pig)
+struct TrailParticle {
+    float x, y, vx, vy, startX, maxDist;
+    uint8_t baseSize;
+    bool active;
+};
+static const int TRAIL_COUNT = 10;
+static TrailParticle trailParticles[TRAIL_COUNT] = {};
+static uint32_t lastTrailSpawn = 0;
+static uint32_t lastTrailUpdate = 0;
+static int trailSpawnIdx = 0;
 // Internal state for looking direction
 static bool facingRight = true;  // Default: pig looks right
 static uint32_t lastFlipTime = 0;
@@ -206,11 +219,12 @@ void Avatar::init() {
     grassSpeed = 80;
     lastGrassUpdate = millis();
     lastGrassStopTime = 0;  // No cooldown on fresh init
-    for (int i = 0; i < 26; i++) {
-        // Random grass pattern /\/\\//\/
-        grassPattern[i] = (random(0, 2) == 0) ? '/' : '\\';
+    grassOffset = 0;
+    for (int i = 0; i < GRASS_BLADE_MAX; i++) {
+        grassBlades[i].height = random(6, 20);
+        grassBlades[i].lean   = random(-3, 4);
+        grassBlades[i].width  = random(1, 4);
     }
-    grassPattern[26] = '\0';
 
     // Init star system, dormant until night
     starsActive = false;
@@ -694,62 +708,189 @@ void Avatar::setGrassSpeed(uint16_t ms) {
     grassSpeed = ms;
 }
 
-void Avatar::setGrassPattern(const char* pattern) {
-    strncpy(grassPattern, pattern, 26);
-    grassPattern[26] = '\0';
+void Avatar::setGrassPattern(const char*) {
+    // No-op: pixel-blade grass has no character pattern (kept for API compat).
 }
 
 void Avatar::resetGrassPattern() {
-    // Reset to random grass pattern /\/\\//\/
-    for (int i = 0; i < 26; i++) {
-        grassPattern[i] = (random(0, 2) == 0) ? '/' : '\\';
+    grassOffset = 0;
+    for (int i = 0; i < GRASS_BLADE_MAX; i++) {
+        grassBlades[i].height = random(6, 20);
+        grassBlades[i].lean   = random(-3, 4);
+        grassBlades[i].width  = random(1, 4);
     }
-    grassPattern[26] = '\0';
 }
 
 void Avatar::updateGrass() {
     if (!grassMoving) return;
-    
+
+    const int count    = DISPLAY_W / GRASS_STRIDE;   // 30 (V8) / 40 (Pancake)
+    const int16_t span = DISPLAY_W + 60;             // tree-offset wrap span
+
     uint32_t now = millis();
-    if (now - lastGrassUpdate < grassSpeed) return;
+    // Pixel-level scroll: shift 1px every grassSpeed/STRIDE ms (smooth).
+    uint32_t pixelInterval = grassSpeed / GRASS_STRIDE;
+    if (pixelInterval < 1) pixelInterval = 1;
+    if (now - lastGrassUpdate < pixelInterval) return;
     lastGrassUpdate = now;
-    
-    // Shift pattern based on grassDirection (set when grass started)
-    // grassDirection=true: grass scrolls RIGHT (pig faces left, walking left through world)
-    // grassDirection=false: grass scrolls LEFT (pig faces right, walking right through world)
-    if (grassDirection) {
-        // Shift right (grass scrolls right)
-        char last = grassPattern[25];
-        for (int i = 25; i > 0; i--) {
-            grassPattern[i] = grassPattern[i - 1];
+
+    // The tree is part of the world: it scrolls 1px per grass pixel (original).
+    if (grassDirection) {                 // world scrolls right
+        grassOffset++;
+        if (treePhase != TreePhase::HIDDEN) treeScrollOffset++;
+        if (grassOffset >= GRASS_STRIDE) {
+            grassOffset = 0;
+            GrassBlade last = grassBlades[count - 1];
+            for (int i = count - 1; i > 0; i--) grassBlades[i] = grassBlades[i - 1];
+            grassBlades[0] = last;
+            if (treeScrollOffset > span) treeScrollOffset -= span;
         }
-        grassPattern[0] = last;
-    } else {
-        // Shift left (grass scrolls left)
-        char first = grassPattern[0];
-        for (int i = 0; i < 25; i++) {
-            grassPattern[i] = grassPattern[i + 1];
+    } else {                              // world scrolls left
+        grassOffset--;
+        if (treePhase != TreePhase::HIDDEN) treeScrollOffset--;
+        if (grassOffset < 0) {
+            grassOffset = GRASS_STRIDE - 1;
+            GrassBlade first = grassBlades[0];
+            for (int i = 0; i < count - 1; i++) grassBlades[i] = grassBlades[i + 1];
+            grassBlades[count - 1] = first;
+            if (treeScrollOffset < -span) treeScrollOffset += span;
         }
-        grassPattern[25] = first;
     }
-    
-    // Occasionally mutate a character for variety
+
+    // ~3% chance: re-randomize one blade for organic variety.
     if (random(0, 30) == 0) {
-        int pos = random(0, 26);
-        grassPattern[pos] = (random(0, 2) == 0) ? '/' : '\\';
+        int idx = random(0, count);
+        grassBlades[idx].height = random(6, 20);
+        grassBlades[idx].lean   = random(-3, 4);
+        grassBlades[idx].width  = random(1, 4);
     }
 }
 
 void Avatar::drawGrass(M5Canvas& canvas) {
     updateGrass();
-    
-    canvas.setTextSize(2);  // Same as menu items
-    canvas.setTextColor(realActive() ? REAL_GRASS : getDrawColor());  // green grass in Realistic
-    canvas.setTextDatum(top_left);
 
-    // Draw at bottom of avatar area, full screen width
-    int grassY = 91;  // Below the pig face (at edge of main canvas)
-    canvas.drawString(grassPattern, 0, grassY);
+    uint32_t now = millis();
+    uint16_t color = realActive() ? REAL_GRASS : getDrawColor();  // green in Realistic
+    const int16_t baseY = 106;                 // ground line (matches the tree)
+    const int count  = DISPLAY_W / GRASS_STRIDE;
+    const int center = DISPLAY_W / 2;
+
+    // Shake state (screen-shake ripple through the blades)
+    bool  shakeActive    = Display::isShaking();
+    float shakeDecay     = shakeActive ? Display::getShakeDecay() : 0.0f;
+    uint8_t shakeIntensity = shakeActive ? Display::getShakeIntensity() : 0;
+
+    // Solid ground line
+    canvas.fillRect(0, snapPx(baseY - 1), DISPLAY_W, PX, color);
+
+    // Pig footprint (for grass bending) — ~108px pig at currentX.
+    // (Always on the ground until the jump/attack-hop animations land in stage 3.)
+    bool pigOnGround = true;
+    int pigLeft   = currentX + 9;
+    int pigRight  = currentX + 99;
+    int pigCenter = (pigLeft + pigRight) / 2;
+    int pigHalf   = (pigRight - pigLeft) / 2;
+
+    // Tree screen X (for the collision ripple)
+    const int16_t WRAP_HI = DISPLAY_W + 20, WRAP_LO = -80, WRAP_SPAN = WRAP_HI - WRAP_LO;
+    int16_t treeScreenX = treeTrunk.baseX + treeScrollOffset;
+    while (treeScreenX > WRAP_HI) treeScreenX -= WRAP_SPAN;
+    while (treeScreenX < WRAP_LO) treeScreenX += WRAP_SPAN;
+
+    for (int i = 0; i < count; i++) {
+        int16_t cx = i * GRASS_STRIDE + grassOffset;
+        if (cx < -GRASS_STRIDE) cx += DISPLAY_W + GRASS_STRIDE;
+        if (cx >= DISPLAY_W) continue;
+
+        const GrassBlade& b = grassBlades[i];
+        int16_t drawHeight = b.height;
+        int8_t  drawLean   = b.lean;
+
+        // Ambient wind sway — triangle wave, ~2.5s period, per-blade phase
+        {
+            uint32_t phase = now + (uint32_t)i * 197;
+            int wave = (int)(phase % 2500);
+            int sway = (wave < 1250) ? (wave - 625) : (1875 - wave);
+            drawLean += (int8_t)(sway * PX / 625);
+        }
+
+        // Bend grass under the pig body
+        if (pigOnGround && cx >= pigLeft && cx <= pigRight) {
+            int d = cx - pigCenter; if (d < 0) d = -d;
+            float bend = 1.0f - (float)d / (float)pigHalf;
+            drawHeight = b.height - (int16_t)((float)b.height * 0.7f * bend);
+            if (drawHeight < PX) drawHeight = PX;
+            int8_t leanPush = (int8_t)(4.0f * bend);
+            drawLean = (cx < pigCenter) ? (b.lean - leanPush) : (b.lean + leanPush);
+        }
+
+        // Shake impact ripple (strongest at center, fades to edges)
+        bool bladeInverted = false;
+        if (shakeActive && shakeDecay > 0.05f) {
+            float edgeDist = 1.0f - (float)(cx > center ? cx - center : center - cx) / (float)center;
+            if (edgeDist < 0.0f) edgeDist = 0.0f;
+            float impact = edgeDist * shakeDecay * ((float)shakeIntensity / 5.0f);
+            if (impact > 0.15f) drawLean += ((now / 33) % 2 == 0) ? PX : -PX;
+            if (impact > 0.5f)  bladeInverted = true;
+        }
+
+        // Tree-collision ripple from the trunk
+        if (treeColliding) {
+            int16_t dist = cx > treeScreenX ? cx - treeScreenX : treeScreenX - cx;
+            int16_t radius = (int16_t)treeTrunk.crownRadius * 3;
+            if (dist < radius) {
+                float falloff = 1.0f - (float)dist / (float)radius;
+                uint32_t phase = now + (uint32_t)(dist * 7);
+                int8_t jitter = ((phase / 33) % 2 == 0) ? PX : -PX;
+                drawLean += (int8_t)((float)jitter * falloff);
+            }
+        }
+
+        int16_t tipX = snapPx(cx + drawLean);
+        int16_t tipY = snapPx(baseY - drawHeight);
+        uint16_t bladeColor = (bladeInverted || (pigOnGround && cx >= pigLeft && cx <= pigRight))
+                              ? getBGColor() : color;
+        fatLine(canvas, snapPx(cx), baseY, tipX, tipY, bladeColor);
+    }
+
+    // === Dust trail particles (kicked up by the running pig) ===
+    bool isRunning = transitioning || grassMoving;
+    if (isRunning && pigOnGround && now - lastTrailSpawn > 70) {
+        lastTrailSpawn = now;
+        TrailParticle& p = trailParticles[trailSpawnIdx];
+        trailSpawnIdx = (trailSpawnIdx + 1) % TRAIL_COUNT;
+        if (facingRight) {
+            p.x = (float)(currentX + random(0, 20));
+            p.vx = -(1.0f + (float)random(0, 20) / 10.0f);
+        } else {
+            p.x = (float)(currentX + 88 + random(0, 20));
+            p.vx = 1.0f + (float)random(0, 20) / 10.0f;
+        }
+        p.y = (float)(96 + random(0, 10));
+        p.vy = -(0.2f + (float)random(0, 10) / 20.0f);
+        p.startX = p.x;
+        p.maxDist = 30.0f + (float)random(0, 31);
+        p.baseSize = random(1, 3);
+        p.active = true;
+    }
+    if (now - lastTrailUpdate > 50) {
+        lastTrailUpdate = now;
+        for (int i = 0; i < TRAIL_COUNT; i++) {
+            if (!trailParticles[i].active) continue;
+            trailParticles[i].x += trailParticles[i].vx;
+            trailParticles[i].y += trailParticles[i].vy;
+            float dx = trailParticles[i].x - trailParticles[i].startX;
+            if (dx < 0) dx = -dx;
+            if (dx >= trailParticles[i].maxDist) trailParticles[i].active = false;
+        }
+    }
+    for (int i = 0; i < TRAIL_COUNT; i++) {
+        if (!trailParticles[i].active) continue;
+        int tpx = snapPx((int16_t)trailParticles[i].x);
+        int tpy = snapPx((int16_t)trailParticles[i].y);
+        if (tpx < 0 || tpx >= DISPLAY_W) continue;
+        canvas.fillRect(tpx, tpy, PX, PX, color);
+    }
 }
 
 // --- Night sky star system ---
@@ -1370,35 +1511,8 @@ void Avatar::drawTree(M5Canvas& canvas) {
     const int16_t WRAP_LO   = -80;
     const int16_t WRAP_SPAN = WRAP_HI - WRAP_LO;
 
-    // --- Scroll the tree WITH the walking world (original behaviour) ---
-    // The tree is part of the landscape the pig treads through: it scrolls at the
-    // grass rate in the grass direction and wraps (below), so it passes the pig —
-    // which shakes it on contact — from EITHER side. (The port's old "drift toward
-    // the pig centre" only ever let left-side trees reach the pig, and left the
-    // far/off-screen right-side trees, so the pig never shook them.)
-    static uint32_t lastTreeScrollMs = 0;
-    static float    treeScrollAccum  = 0.0f;
-    if ((treePhase == TreePhase::ALIVE || treePhase == TreePhase::GROWING) &&
-        (grassMoving || transitioning)) {
-        uint32_t nowMs = millis();
-        if (lastTreeScrollMs == 0) lastTreeScrollMs = nowMs;
-        uint32_t dt = nowMs - lastTreeScrollMs;
-        lastTreeScrollMs = nowMs;
-        if (dt > 50) dt = 50;   // cap so a long stall can't teleport the tree
-        // Grass advances ~12px (one size-2 char) every grassSpeed ms; match it.
-        float step = (12.0f / (float)(grassSpeed ? grassSpeed : 80)) * (float)dt;
-        treeScrollAccum += grassDirection ? step : -step;  // true=world scrolls right
-        int16_t whole = (int16_t)treeScrollAccum;
-        if (whole != 0) {
-            treeScrollAccum  -= whole;
-            treeScrollOffset += whole;
-            while (treeScrollOffset >  WRAP_SPAN) treeScrollOffset -= WRAP_SPAN;
-            while (treeScrollOffset < -WRAP_SPAN) treeScrollOffset += WRAP_SPAN;
-        }
-    } else {
-        lastTreeScrollMs = 0;
-        treeScrollAccum  = 0.0f;
-    }
+    // The tree scrolls WITH the world — coupled 1px-per-grass-pixel in
+    // updateGrass() (original behaviour), so it passes the pig from either side.
 
     // --- Pig-tree collision: when a tree scrolls onto the pig it shakes ---
     treeColliding = false;

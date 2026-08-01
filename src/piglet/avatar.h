@@ -158,8 +158,18 @@ private:
     static bool onRightSide;  // Track which side of screen pig is on
     static uint32_t lastGrassUpdate;
     static uint16_t grassSpeed;  // ms per shift
-    static char grassPattern[32];  // Wider for full screen coverage
-    
+
+    // Fat-pixel grass blade field (pixel-scrolled), matching the original.
+    struct GrassBlade {
+        uint8_t height;  // 6-20 px
+        int8_t  lean;    // tip offset: -3..+3
+        uint8_t width;   // base half-width: 1-3
+    };
+    static constexpr int16_t GRASS_STRIDE   = 8;   // px spacing between blades
+    static constexpr uint8_t GRASS_BLADE_MAX = 48; // >= DISPLAY_W/STRIDE for 320-wide
+    static GrassBlade grassBlades[GRASS_BLADE_MAX];
+    static int16_t grassOffset;  // smooth scroll pixel offset
+
     static void drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool blink = false, bool faceRight = true, bool sniff = false);
     static void drawGrass(M5Canvas& canvas);
     static void updateGrass();
