@@ -8,6 +8,7 @@
 #include <string.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/portmacro.h>
+#include <esp_random.h>
 #include "../core/porkchop.h"
 #include "../core/config.h"
 #include "../core/xp.h"
@@ -190,6 +191,12 @@ uint32_t Display::lastActivityTime = 0;
 bool Display::dimmed = false;
 bool Display::screenForcedOff = false;
 bool Display::snapping = false;
+
+// Screen shake state
+bool     Display::screenShakeActive    = false;
+uint32_t Display::screenShakeStart     = 0;
+uint16_t Display::screenShakeDuration  = 200;
+uint8_t  Display::screenShakeIntensity = 3;
 char Display::toastMessage[160] = {0};
 uint32_t Display::toastStartTime = 0;
 uint32_t Display::toastDurationMs = 2000;
@@ -533,11 +540,47 @@ void Display::clear() {
     pushAll();
 }
 
+void Display::triggerScreenShake(uint8_t intensity, uint16_t durationMs) {
+    if (intensity > 5) intensity = 5;
+    screenShakeActive = true;
+    screenShakeStart = millis();
+    screenShakeDuration = durationMs;
+    screenShakeIntensity = intensity;
+}
+
+bool Display::isShaking() { return screenShakeActive; }
+
+float Display::getShakeDecay() {
+    if (!screenShakeActive) return 0.0f;
+    uint32_t elapsed = millis() - screenShakeStart;
+    if (elapsed >= screenShakeDuration) return 0.0f;
+    return 1.0f - (float)elapsed / (float)screenShakeDuration;
+}
+
+uint8_t Display::getShakeIntensity() {
+    return screenShakeActive ? screenShakeIntensity : 0;
+}
+
 void Display::pushAll() {
+    // Screen-shake jitter offset (decays over the shake duration).
+    int offsetX = 0, offsetY = 0;
+    if (screenShakeActive) {
+        uint32_t elapsed = millis() - screenShakeStart;
+        if (elapsed >= screenShakeDuration) {
+            screenShakeActive = false;
+        } else {
+            float decay = 1.0f - (float)elapsed / (float)screenShakeDuration;
+            int amp = (int)(screenShakeIntensity * decay);
+            if (amp > 0) {
+                offsetX = (int)(esp_random() % (amp * 2 + 1)) - amp;
+                offsetY = (int)(esp_random() % (amp * 2 + 1)) - amp;
+            }
+        }
+    }
     M5.Display.startWrite();
-    topBar->pushSprite(0, 0);
-    mainCanvas->pushSprite(0, TOP_BAR_H);
-    bottomBar->pushSprite(0, DISPLAY_H - BOTTOM_BAR_H);
+    topBar->pushSprite(offsetX, offsetY);
+    mainCanvas->pushSprite(offsetX, TOP_BAR_H + offsetY);
+    bottomBar->pushSprite(offsetX, DISPLAY_H - BOTTOM_BAR_H + offsetY);
     M5.Display.endWrite();
 
 #ifdef PORKCHOP_PANCAKE

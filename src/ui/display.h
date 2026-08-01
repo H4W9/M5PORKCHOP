@@ -162,8 +162,21 @@ public:
     // Screenshot
     static bool takeScreenshot();     // Save screen to SD card, returns success
     static bool isSnapping() { return snapping; }  // True during screenshot save
-    
+
+    // Screen shake effect (captures, attack impacts). Applied as a jitter offset
+    // to the sprite pushes in pushAll(); decays over the duration.
+    static void triggerScreenShake(uint8_t intensity = 3, uint16_t durationMs = 200);
+    static bool isShaking();
+    static float getShakeDecay();      // 1.0 at start -> 0.0 at end
+    static uint8_t getShakeIntensity();
+
 private:
+    // Screen shake state
+    static bool screenShakeActive;
+    static uint32_t screenShakeStart;
+    static uint16_t screenShakeDuration;
+    static uint8_t screenShakeIntensity;
+
     static M5Canvas* topBar;
     static M5Canvas* mainCanvas;
     static M5Canvas* bottomBar;
