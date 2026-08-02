@@ -4,6 +4,7 @@
 #include <M5Cardputer.h>
 #include <mbedtls/sha256.h>
 #include "display.h"
+#include "../audio/sfx.h"
 #include "../core/xp.h"
 #include "../piglet/mood.h"
 #include <string.h>
@@ -239,6 +240,7 @@ void UnlockablesMenu::handleTextInput() {
             if (c >= 32 && c <= 126 && c != '`' && textLen < 32) {
                 textBuffer[textLen++] = c;
                 textBuffer[textLen] = '\0';
+                SFX::play(SFX::TYPING_KEY);
             }
         }
     }

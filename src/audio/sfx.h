@@ -56,7 +56,24 @@ enum Event {
     // === WEATHER / BIRDS / TREE ===
     BIRD_HIT,           // bird zapped by a deauth wave
     BIRD_IMPACT,        // downed bird hits the ground
-    OINK_GRUNT          // pig bumps into the tree
+    OINK_GRUNT,         // low guttural burst (pig bumps tree / bored)
+
+    // === UI FEEDBACK ===
+    MODE_ENTER,         // mode transition in - quick ascending pair
+    MODE_EXIT,          // mode transition out - quick descending pair
+    CONFIRM,            // positive confirmation (settings saved)
+    TYPING_KEY,         // ultra-short keystroke tick
+    BACK_NAV,           // back/escape navigation
+
+    // === PIG VOCALIZATIONS ===
+    OINK_HAPPY,         // nasal descending ~320-200Hz (truffle found)
+    OINK_SQUEAL,        // high ascending ~700-1200Hz (capture excitement)
+    OINK_CURIOUS,       // questioning upward ~350-580Hz (sniff/new net)
+
+    // === AMBIENT SCANNING ===
+    SONAR_PING,         // minimal single blip
+    RADAR_SWEEP,        // subtle rising sweep
+    SCAN_TICK           // quiet periodic tick
 };
 
 // Initialize audio system (call once at startup)

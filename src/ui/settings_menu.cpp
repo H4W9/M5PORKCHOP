@@ -3,6 +3,7 @@
 
 #include "settings_menu.h"
 #include "display.h"
+#include "../audio/sfx.h"
 #include "../core/config.h"
 #include "../core/xp.h"
 #include "../core/sd_layout.h"
@@ -1181,6 +1182,7 @@ void SettingsMenu::handleTextInput() {
             if (c >= 32 && c <= 126 && c != '`' && textLen < limit) {
                 textBuffer[textLen++] = c;
                 textBuffer[textLen] = '\0';
+                SFX::play(SFX::TYPING_KEY);
             }
         }
     }

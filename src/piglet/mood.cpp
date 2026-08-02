@@ -1541,7 +1541,8 @@ void Mood::onHandshakeCaptured(const char* apName) {
     lastPhraseChange = millis();
     queuePhrases(buf2, buf3);
 
-    // Celebratory beep for handshake capture - non-blocking via SFX engine
+    // Pig squeals with excitement, then victory arpeggio confirms the capture
+    SFX::play(SFX::OINK_SQUEAL);
     SFX::play(SFX::HANDSHAKE);
     
     // Force mood peek to show EXCITED face regardless of threshold
@@ -1626,12 +1627,10 @@ void Mood::onNewNetwork(const char* apName, int8_t rssi, uint8_t channel) {
     lastActivityTime = millis();
     isBoredState = false;  // Clear bored state - found something!
     
-    // Audio feedback - soft blip for new network
-    SFX::play(SFX::NETWORK_NEW);
-
     // Perk up + sniff — found a truffle!
     Avatar::perkUp();
     Avatar::sniff();
+    SFX::play(SFX::OINK_CURIOUS);   // pig sniffs the air — what's that?
     
     // Award XP for network discovery
     // Check if in DO NO HAM mode for different XP event
@@ -2974,7 +2973,13 @@ void Mood::onBored(uint16_t networkCount) {
         SET_PHRASE(currentPhrase, PHRASES_BORED[idx]);
     }
     lastPhraseChange = millis();
-    
+
+    // Occasional grunt + paw scratch when bored (30% chance)
+    if (random(0, 100) < 30) {
+        SFX::play(SFX::OINK_GRUNT);
+        Avatar::pawScratch();
+    }
+
     // Set avatar to sleepy/bored state (will be maintained by updateAvatarState)
     Avatar::setState(AvatarState::SLEEPY);
 }
@@ -2996,7 +3001,8 @@ void Mood::onWarhogFound(const char* apName, uint8_t channel) {
     
     // Sniff animation - found a truffle!
     Avatar::sniff();
-    
+    SFX::play(SFX::OINK_HAPPY);     // happy snuffle — found one while wardriving
+
     // XP awarded in warhog.cpp when network is logged (authoritative source)
     
     int idx = pickPhraseIdx(PhraseCategory::WARHOG_FOUND, sizeof(PHRASES_WARHOG_FOUND) / sizeof(PHRASES_WARHOG_FOUND[0]));

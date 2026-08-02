@@ -103,12 +103,90 @@ static const Note SND_BIRD_IMPACT[] = {
     {280, 20, 0},
     {0, 0, 0}
 };
-// Pig bumps into the tree — guttural grunt
+// Pig bumps into the tree / bored grunt — guttural burst
 static const Note SND_OINK_GRUNT[] = {
-    {420, 40, 0},     // guttural attack
+    {420, 40, 0},     // guttural attack (low as audible)
     {340, 35, 0},     // drop into rumble
     {400, 20, 5},     // brief push up (vocal wobble)
     {300, 40, 0},     // settle into chest tone
+    {0, 0, 0}
+};
+
+// ==[ UI FEEDBACK ]==
+// MODE_ENTER: quick ascending pair — "stepping in"
+static const Note SND_MODE_ENTER[] = {
+    {700, 30, 10},
+    {1000, 40, 0},
+    {0, 0, 0}
+};
+// MODE_EXIT: quick descending pair — "backing out"
+static const Note SND_MODE_EXIT[] = {
+    {900, 30, 10},
+    {600, 40, 0},
+    {0, 0, 0}
+};
+// CONFIRM: positive two-step (settings saved)
+static const Note SND_CONFIRM[] = {
+    {800, 40, 15},
+    {1100, 50, 0},
+    {0, 0, 0}
+};
+// TYPING_KEY: ultra-short keystroke tick
+static const Note SND_TYPING_KEY[] = {
+    {1200, 4, 0},
+    {0, 0, 0}
+};
+// BACK_NAV: single soft back tone
+static const Note SND_BACK_NAV[] = {
+    {800, 25, 0},
+    {0, 0, 0}
+};
+
+// ==[ PIG VOCALIZATIONS ]==
+// OINK_HAPPY: nasal descending snuffle — found a truffle
+static const Note SND_OINK_HAPPY[] = {
+    {320, 30, 0},     // nasal onset
+    {280, 25, 5},     // wobble down + breath gap
+    {310, 20, 0},     // pitch instability (pigs aren't pitch-perfect)
+    {240, 30, 0},     // settle lower
+    {200, 25, 0},     // snuffle tail
+    {0, 0, 0}
+};
+// OINK_SQUEAL: high ascending alarm — capture excitement
+static const Note SND_OINK_SQUEAL[] = {
+    {700, 25, 0},     // alarm onset
+    {900, 25, 0},     // rapid rise
+    {850, 20, 0},     // wobble back (vocal instability)
+    {1100, 30, 0},    // peak alarm
+    {1200, 35, 0},    // sustain high
+    {0, 0, 0}
+};
+// OINK_CURIOUS: sniff then rising question — what's that?
+static const Note SND_OINK_CURIOUS[] = {
+    {350, 25, 12},    // sniff
+    {380, 20, 10},    // sniff (slightly higher — interest building)
+    {500, 35, 5},     // question rise
+    {580, 40, 0},     // hold the question (rising intonation = curiosity)
+    {0, 0, 0}
+};
+
+// ==[ AMBIENT SCANNING ]==
+// SONAR_PING: minimal single blip
+static const Note SND_SONAR_PING[] = {
+    {1000, 20, 0},
+    {0, 0, 0}
+};
+// RADAR_SWEEP: subtle rising sweep
+static const Note SND_RADAR_SWEEP[] = {
+    {280, 30, 0},
+    {350, 30, 0},
+    {500, 30, 0},
+    {700, 40, 0},
+    {0, 0, 0}
+};
+// SCAN_TICK: quiet periodic tick
+static const Note SND_SCAN_TICK[] = {
+    {600, 8, 0},
     {0, 0, 0}
 };
 
@@ -398,6 +476,39 @@ bool update() {
                 break;
             case OINK_GRUNT:
                 startSequence(SND_OINK_GRUNT);
+                break;
+            case MODE_ENTER:
+                startSequence(SND_MODE_ENTER);
+                break;
+            case MODE_EXIT:
+                startSequence(SND_MODE_EXIT);
+                break;
+            case CONFIRM:
+                startSequence(SND_CONFIRM);
+                break;
+            case TYPING_KEY:
+                startSequence(SND_TYPING_KEY);
+                break;
+            case BACK_NAV:
+                startSequence(SND_BACK_NAV);
+                break;
+            case OINK_HAPPY:
+                startSequence(SND_OINK_HAPPY);
+                break;
+            case OINK_SQUEAL:
+                startSequence(SND_OINK_SQUEAL);
+                break;
+            case OINK_CURIOUS:
+                startSequence(SND_OINK_CURIOUS);
+                break;
+            case SONAR_PING:
+                startSequence(SND_SONAR_PING);
+                break;
+            case RADAR_SWEEP:
+                startSequence(SND_RADAR_SWEEP);
+                break;
+            case SCAN_TICK:
+                startSequence(SND_SCAN_TICK);
                 break;
             case HANDSHAKE:
                 startSequence(SND_HANDSHAKE);

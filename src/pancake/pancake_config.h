@@ -69,6 +69,18 @@
 #endif
 #define PANCAKE_LED_COUNT   1
 
+// ---- Piezo buzzer ------------------------------------------
+// Pancake: passive piezo driven by Arduino tone() (LEDC PWM).
+//   Wire GPIO -> buzzer(+) -> buzzer(-) -> GND (optional 100ohm in series).
+//   GPIO25 is free, non-strapping, and broken out; change here if needed
+//   (GPIO15 or GPIO22 are equally safe alternates).
+// V8: no buzzer hardware -> -1 keeps the speaker a silent stub.
+#ifdef PORKCHOP_MARAUDER_V8
+  #define PANCAKE_BUZZER_PIN  -1
+#else
+  #define PANCAKE_BUZZER_PIN  25
+#endif
+
 // ---- Display geometry --------------------------------------
 #ifdef PORKCHOP_MARAUDER_V8
 // ILI9341 240x320 portrait (rotation=0).

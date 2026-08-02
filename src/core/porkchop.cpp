@@ -355,6 +355,15 @@ void Porkchop::setMode(PorkchopMode mode) {
         (unsigned)esp_get_free_heap_size(),
         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     
+    // Mode transition audio feedback: stepping into a real mode gets the
+    // ascending "enter" chime; returning to the home screen or menu gets
+    // the softer "back" tone.
+    if (mode == PorkchopMode::IDLE || mode == PorkchopMode::MENU) {
+        SFX::play(SFX::BACK_NAV);
+    } else {
+        SFX::play(SFX::MODE_ENTER);
+    }
+
     // Cleanup the mode we're actually leaving (oldMode), not previousMode
     switch (oldMode) {
         case PorkchopMode::OINK_MODE:

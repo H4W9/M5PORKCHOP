@@ -250,12 +250,32 @@ public:
     int getVBUSVoltage() { return 0; }
 };
 
-// ---- Speaker stub ------------------------------------------
+// ---- Speaker -----------------------------------------------
+// Pancake: passive piezo on PANCAKE_BUZZER_PIN, driven by Arduino tone()
+//   (hardware-timed LEDC PWM, non-blocking, auto-stops after `duration` —
+//   a drop-in for M5.Speaker.tone()). V8 (pin < 0) stays a silent stub.
 struct Speaker_Class {
-    void tone(uint16_t, uint32_t = 1000) {}
-    void stop()             {}
-    void setVolume(uint8_t) {}
-    bool isEnabled()        { return false; }
+    void tone(uint16_t freq, uint32_t duration = 1000) {
+#if defined(PANCAKE_BUZZER_PIN) && (PANCAKE_BUZZER_PIN >= 0)
+        if (freq == 0) { ::noTone(PANCAKE_BUZZER_PIN); return; }
+        ::tone((uint8_t)PANCAKE_BUZZER_PIN, freq, duration);
+#else
+        (void)freq; (void)duration;
+#endif
+    }
+    void stop() {
+#if defined(PANCAKE_BUZZER_PIN) && (PANCAKE_BUZZER_PIN >= 0)
+        ::noTone(PANCAKE_BUZZER_PIN);
+#endif
+    }
+    void setVolume(uint8_t) {}   // passive piezo: volume fixed in hardware
+    bool isEnabled() {
+#if defined(PANCAKE_BUZZER_PIN) && (PANCAKE_BUZZER_PIN >= 0)
+        return true;
+#else
+        return false;
+#endif
+    }
 };
 
 // ---- M5Cardputer_Class -------------------------------------
