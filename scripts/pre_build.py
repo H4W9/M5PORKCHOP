@@ -19,14 +19,14 @@ def get_git_commit():
         pass
     return "unknown"
 
-def pre_build_callback(source, target, env):
-    """Generate build info header"""
+def generate_build_info():
+    """Write src/build_info.h with the current version, commit, and time."""
     build_info = {
         "build_time": datetime.now().isoformat(),
         "version": env.GetProjectOption("custom_version", "0.1.1"),
         "commit": get_git_commit()
     }
-    
+
     info_path = os.path.join(env.get("PROJECT_SRC_DIR"), "build_info.h")
     with open(info_path, "w") as f:
         f.write("// Auto-generated build info\n")
@@ -35,4 +35,10 @@ def pre_build_callback(source, target, env):
         f.write(f'#define BUILD_VERSION "{build_info["version"]}"\n')
         f.write(f'#define BUILD_COMMIT "{build_info["commit"]}"\n')
 
-env.AddPreAction("buildprog", pre_build_callback)
+    print(f"[pre_build] build_info.h stamped: v{build_info['version']} @ {build_info['commit']}")
+
+# Generate NOW, during the pre phase (script import) — BEFORE any source is
+# compiled. Registering this as an AddPreAction("buildprog", ...) instead fires
+# it at LINK time, after display.cpp (which includes build_info.h) is already
+# compiled, so the binary kept the stale committed commit hash.
+generate_build_info()
