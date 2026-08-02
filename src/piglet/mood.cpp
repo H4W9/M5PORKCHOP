@@ -1452,16 +1452,26 @@ void Mood::update() {
     maybeNotifyMoodTierUp(getLastEffectiveHappiness(), now);
 }
 
+void Mood::onBirdKill() {
+    // Pig downed a bird with a deauth wave — a small gleeful celebration.
+    happiness = min(happiness + 2, 100);
+    applyMomentumBoost(15);
+    lastActivityTime = millis();
+    isBoredState = false;
+    Avatar::triggerTailWiggle();
+    Display::triggerScreenShake(2, 150);
+}
+
 void Mood::onHandshakeCaptured(const char* apName) {
     happiness = min(happiness + 10, 100);  // Smaller permanent boost
     applyMomentumBoost(30);  // Big temporary excitement!
     lastActivityTime = millis();
     
-    // Sniff animation - caught something big!
+    // Sniff + multi-hop pounce + tail wiggle + screen shake — caught something big!
     Avatar::sniff();
-    
-    // Cute jump celebration!
-    Avatar::cuteJump();
+    Avatar::attackHop();
+    Avatar::triggerTailWiggle();
+    Display::triggerScreenShake(4, 250);
     
     // Phase 2: Attack shake - strong shake for captures!
     Avatar::setAttackShake(true, true);
@@ -1531,7 +1541,8 @@ void Mood::onHandshakeCaptured(const char* apName) {
     lastPhraseChange = millis();
     queuePhrases(buf2, buf3);
 
-    // Celebratory beep for handshake capture - non-blocking via SFX engine
+    // Pig squeals with excitement, then victory arpeggio confirms the capture
+    SFX::play(SFX::OINK_SQUEAL);
     SFX::play(SFX::HANDSHAKE);
     
     // Force mood peek to show EXCITED face regardless of threshold
@@ -1543,11 +1554,11 @@ void Mood::onPMKIDCaptured(const char* apName) {
     applyMomentumBoost(40);  // Even more temporary excitement!
     lastActivityTime = millis();
     
-    // Sniff animation - stealthy capture!
+    // Sniff + multi-hop pounce + tail wiggle + screen shake — stealthy capture!
     Avatar::sniff();
-    
-    // Cute jump celebration!
-    Avatar::cuteJump();
+    Avatar::attackHop();
+    Avatar::triggerTailWiggle();
+    Display::triggerScreenShake(5, 300);
     
     // Phase 2: Attack shake - strong shake for captures!
     Avatar::setAttackShake(true, true);
@@ -1616,11 +1627,10 @@ void Mood::onNewNetwork(const char* apName, int8_t rssi, uint8_t channel) {
     lastActivityTime = millis();
     isBoredState = false;  // Clear bored state - found something!
     
-    // Audio feedback - soft blip for new network
-    SFX::play(SFX::NETWORK_NEW);
-    
-    // Sniff animation - found a truffle!
+    // Perk up + sniff — found a truffle!
+    Avatar::perkUp();
     Avatar::sniff();
+    SFX::play(SFX::OINK_CURIOUS);   // pig sniffs the air — what's that?
     
     // Award XP for network discovery
     // Check if in DO NO HAM mode for different XP event
@@ -1785,6 +1795,8 @@ void Mood::onNoActivity(uint32_t seconds) {
     } else if (seconds > boredThreshold) {
         // Getting bored
         happiness = max(happiness - 1, -100);
+        // Occasional paw scratch when bored (30% chance)
+        if (random(0, 100) < 30) Avatar::pawScratch();
     }
 }
 
@@ -2961,7 +2973,13 @@ void Mood::onBored(uint16_t networkCount) {
         SET_PHRASE(currentPhrase, PHRASES_BORED[idx]);
     }
     lastPhraseChange = millis();
-    
+
+    // Occasional grunt + paw scratch when bored (30% chance)
+    if (random(0, 100) < 30) {
+        SFX::play(SFX::OINK_GRUNT);
+        Avatar::pawScratch();
+    }
+
     // Set avatar to sleepy/bored state (will be maintained by updateAvatarState)
     Avatar::setState(AvatarState::SLEEPY);
 }
@@ -2983,7 +3001,8 @@ void Mood::onWarhogFound(const char* apName, uint8_t channel) {
     
     // Sniff animation - found a truffle!
     Avatar::sniff();
-    
+    SFX::play(SFX::OINK_HAPPY);     // happy snuffle — found one while wardriving
+
     // XP awarded in warhog.cpp when network is logged (authoritative source)
     
     int idx = pickPhraseIdx(PhraseCategory::WARHOG_FOUND, sizeof(PHRASES_WARHOG_FOUND) / sizeof(PHRASES_WARHOG_FOUND[0]));

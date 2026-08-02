@@ -93,8 +93,8 @@ private:
     static MenuCallback callback;
     static bool keyWasPressed;
     
-#ifdef PORKCHOP_PANCAKE
-    static const uint8_t VISIBLE_ITEMS = 10;  // taller Pancake canvas (212px)
+#if defined(PORKCHOP_PANCAKE) && !defined(PORKCHOP_MARAUDER_V8)
+    static const uint8_t VISIBLE_ITEMS = 10;  // taller Pancake canvas (212px); V8's pane is short
     static const uint8_t MODAL_VISIBLE = 9;
 #else
     static const uint8_t VISIBLE_ITEMS = 4;

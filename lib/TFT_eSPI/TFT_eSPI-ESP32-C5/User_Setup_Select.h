@@ -45,8 +45,12 @@
 // Only ONE line below should be uncommented to define your setup.  Add extra lines and files as needed.
 
 //#include <User_Setup.h>           // Default setup is root library folder
-#include <User_Setup_marauder_pancake.h>
-//#include <User_Setup_marauder_V8.h>
+// Board is selected by a build flag from platformio.ini (V8 vs Pancake).
+#if defined(PORKCHOP_MARAUDER_V8) || defined(MARAUDER_V8)
+  #include <User_Setup_marauder_V8.h>
+#else
+  #include <User_Setup_marauder_pancake.h>
+#endif
 
 //#include <User_Setups/Setup1_ILI9341.h>  // Setup file for ESP8266 configured for my ILI9341
 //#include <User_Setups/Setup2_ST7735.h>   // Setup file for ESP8266 configured for my ST7735

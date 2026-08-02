@@ -3,6 +3,7 @@
 #include "avatar.h"
 #include "weather.h"
 #include "../ui/display.h"
+#include "../audio/sfx.h"
 #include <time.h>
 
 // Static members
@@ -16,6 +17,31 @@ int Avatar::moodIntensity = 0;  // Phase 8: -100 to 100
 // Cute jump state
 bool Avatar::jumpActive = false;
 uint32_t Avatar::jumpStartTime = 0;
+// Pig-animation state (stage 3)
+bool     Avatar::attackHopActive = false;
+uint32_t Avatar::attackHopStartTime = 0;
+uint8_t  Avatar::attackHopIndex = 0;
+uint8_t  Avatar::attackHopTotal = 0;
+int16_t  Avatar::attackHopOriginX = 0;
+int16_t  Avatar::attackHopTargets[5] = {0};
+bool     Avatar::spinActive = false;
+uint32_t Avatar::spinStart = 0;
+bool     Avatar::perkUpActive = false;
+uint32_t Avatar::perkUpStart = 0;
+bool     Avatar::flinchActive = false;
+uint32_t Avatar::flinchStart = 0;
+bool     Avatar::pawScratchActive = false;
+uint32_t Avatar::pawScratchStart = 0;
+bool     Avatar::tailWiggleActive = false;
+uint32_t Avatar::tailWiggleStart = 0;
+Avatar::SparkleParticle Avatar::sparkles[Avatar::MAX_SPARKLES] = {};
+WaveMode Avatar::waveMode = WaveMode::NONE;
+uint32_t Avatar::waveBurstStart = 0;
+uint32_t Avatar::waveBurstEnd = 0;
+uint8_t  Avatar::waveIntensity = 3;
+// Tree shakes when an OUTGOING (deauth) wave ring sweeps over it.
+static bool     waveTreeShaking = false;
+static uint32_t waveTreeShakeStart = 0;
 
 // Walk transition state
 bool Avatar::transitioning = false;
@@ -82,7 +108,49 @@ bool Avatar::grassDirection = true;  // true = grass scrolls right
 bool Avatar::pendingGrassStart = false;  // Wait for transition before starting grass
 uint32_t Avatar::lastGrassUpdate = 0;
 uint16_t Avatar::grassSpeed = 80;  // Default fast for OINK
-char Avatar::grassPattern[32] = {0};
+Avatar::GrassBlade Avatar::grassBlades[Avatar::GRASS_BLADE_MAX] = {};
+int16_t Avatar::grassOffset = 0;
+
+// Trail particle system (dust kicked up by the running pig)
+struct TrailParticle {
+    float x, y, vx, vy, startX, maxDist;
+    uint8_t baseSize;
+    bool active;
+};
+static const int TRAIL_COUNT = 10;
+static TrailParticle trailParticles[TRAIL_COUNT] = {};
+static uint32_t lastTrailSpawn = 0;
+static uint32_t lastTrailUpdate = 0;
+static int trailSpawnIdx = 0;
+
+// Fat-pixel helpers — defined here (before any drawer uses them). Font scale 3.
+static constexpr int16_t PX = 3;
+static inline int16_t snapPx(int16_t v) {
+    return (v >= 0) ? (v / PX) * PX : ((v - 2) / PX) * PX;
+}
+// Bresenham line on the PX grid — stamps PX*PX blocks.
+static void fatLine(M5Canvas& canvas, int16_t x1, int16_t y1,
+                    int16_t x2, int16_t y2, uint16_t color) {
+    int gx1 = x1 / PX, gy1 = y1 / PX;
+    int gx2 = x2 / PX, gy2 = y2 / PX;
+    int dx = abs(gx2 - gx1), dy = abs(gy2 - gy1);
+    int sx = (gx1 < gx2) ? 1 : -1, sy = (gy1 < gy2) ? 1 : -1;
+    int err = dx - dy;
+    while (true) {
+        canvas.fillRect(gx1 * PX, gy1 * PX, PX, PX, color);
+        if (gx1 == gx2 && gy1 == gy2) break;
+        int e2 = 2 * err;
+        if (e2 > -dy) { err -= dy; gx1 += sx; }
+        if (e2 < dx)  { err += dx; gy1 += sy; }
+    }
+}
+
+// Tree-pig collision state (pig/deauth-wave bumps the tree -> both shake).
+// Declared here (before drawFrame/drawGrass which read it; set in drawTree).
+static bool   treeColliding = false;
+static bool   wasTreeColliding = false;  // edge-detect for the bump grunt SFX
+static int8_t treeCollisionShake = 0;  // rapid jitter applied to tree X
+
 // Internal state for looking direction
 static bool facingRight = true;  // Default: pig looks right
 static uint32_t lastFlipTime = 0;
@@ -192,7 +260,7 @@ void Avatar::init() {
     // This ensures bubble can float beside pig from the start
     bool startRight = random(0, 2) == 0;
     onRightSide = startRight;
-    currentX = startRight ? 108 : 20;  // Start at proper edge position
+    currentX = startRight ? (DISPLAY_W - 132) : 20;  // Start at proper edge (screen-relative)
     facingRight = !startRight;  // Face toward center (more interesting)
     lastFlipTime = millis();
     flipInterval = random(25000, 50000);  // First walk: 25-50s
@@ -206,11 +274,12 @@ void Avatar::init() {
     grassSpeed = 80;
     lastGrassUpdate = millis();
     lastGrassStopTime = 0;  // No cooldown on fresh init
-    for (int i = 0; i < 26; i++) {
-        // Random grass pattern /\/\\//\/
-        grassPattern[i] = (random(0, 2) == 0) ? '/' : '\\';
+    grassOffset = 0;
+    for (int i = 0; i < GRASS_BLADE_MAX; i++) {
+        grassBlades[i].height = random(6, 20);
+        grassBlades[i].lean   = random(-3, 4);
+        grassBlades[i].width  = random(1, 4);
     }
-    grassPattern[26] = '\0';
 
     // Init star system, dormant until night
     starsActive = false;
@@ -274,6 +343,208 @@ void Avatar::cuteJump() {
     // Trigger a cute celebratory jump - higher and slower than walk bounce
     jumpActive = true;
     jumpStartTime = millis();
+}
+
+// ---- Upstream pig-animation triggers (stage 3) --------------------------------
+void Avatar::perkUp() {
+    if (attackHopActive || spinActive) return;
+    perkUpActive = true; perkUpStart = millis();
+}
+void Avatar::flinch() {
+    if (attackHopActive || spinActive) return;
+    flinchActive = true; flinchStart = millis();
+}
+void Avatar::spin() {
+    if (attackHopActive) return;
+    jumpActive = false;  // spin owns the Y arc
+    spinActive = true; spinStart = millis();
+}
+void Avatar::pawScratch() {
+    if (attackHopActive || spinActive || perkUpActive || transitioning) return;
+    pawScratchActive = true; pawScratchStart = millis();
+}
+void Avatar::triggerTailWiggle() {
+    tailWiggleActive = true; tailWiggleStart = millis();
+}
+void Avatar::triggerSparkles(uint8_t count) {
+    int cx = currentX + 40;  // rough pig centre
+    int cy = 50;
+    for (uint8_t i = 0; i < MAX_SPARKLES && count > 0; i++) {
+        if (sparkles[i].life == 0) {
+            sparkles[i].x = cx + random(-10, 11);
+            sparkles[i].y = cy + random(-10, 11);
+            sparkles[i].vx = random(-3, 4);
+            sparkles[i].vy = random(-4, 1);  // bias upward
+            sparkles[i].life = random(10, 18);
+            count--;
+        }
+    }
+}
+bool Avatar::isAttackHopping() { return attackHopActive; }
+
+void Avatar::attackHop() {
+    attackHopActive = true;
+    attackHopStartTime = millis();
+    attackHopIndex = 0;
+    attackHopOriginX = currentX;
+    attackHopTotal = random(3, 6);  // 3-5 hops
+    const int16_t hi = (int16_t)(DISPLAY_W / 2);  // clamp to left half (screen-relative)
+    int16_t prevX = currentX;
+    for (uint8_t i = 0; i < attackHopTotal; i++) {
+        if (i == attackHopTotal - 1) {
+            attackHopTargets[i] = attackHopOriginX;   // last hop returns home
+        } else {
+            int16_t offset = random(25, 56);
+            if (random(0, 2) == 0) offset = -offset;
+            int16_t target = prevX + offset;
+            if (target < 10) target = 10;
+            if (target > hi) target = hi;
+            attackHopTargets[i] = target;
+        }
+        prevX = attackHopTargets[i];
+    }
+}
+
+void Avatar::updateAndDrawSparkles(M5Canvas& canvas) {
+    uint16_t fg = realActive() ? REAL_STAR : getColorFG();  // warm yellow-orange in Realistic
+    for (uint8_t i = 0; i < MAX_SPARKLES; i++) {
+        if (sparkles[i].life == 0) continue;
+        sparkles[i].x += sparkles[i].vx;
+        sparkles[i].y += sparkles[i].vy;
+        sparkles[i].life--;
+        if (sparkles[i].life > 6) canvas.fillRect(sparkles[i].x, sparkles[i].y, 2, 2, fg);
+        else                      canvas.drawPixel(sparkles[i].x, sparkles[i].y, fg);
+    }
+}
+
+// ---- Radio-activity wave ripples (stage 4) ------------------------------------
+WaveMode Avatar::getWaveMode() { return waveMode; }
+
+void Avatar::waveRipple(WaveMode mode, uint8_t intensity) {
+    if (mode == WaveMode::NONE) { waveMode = WaveMode::NONE; return; }
+    uint32_t now = millis();
+    // OUTGOING priority: don't let INCOMING override an active OUTGOING burst
+    if (mode == WaveMode::INCOMING && waveMode == WaveMode::OUTGOING && now < waveBurstEnd) return;
+    bool alreadyActive = (waveMode != WaveMode::NONE && now < waveBurstEnd);
+    waveMode = mode;
+    waveBurstEnd = now + 4000;
+    if (!alreadyActive) waveBurstStart = now;
+    waveIntensity = intensity;
+}
+
+// Fat-pixel midpoint circle ring, clipped to the canvas.
+static void drawCircleRing(M5Canvas& canvas, int16_t cx, int16_t cy, int16_t r,
+                           uint16_t color, int16_t maxPxX, int16_t maxPxY) {
+    int16_t gr = r / PX;
+    if (gr < 1) return;
+    cx = snapPx(cx); cy = snapPx(cy);
+    int16_t gx = gr, gy = 0, d = 1 - gr;
+    while (gx >= gy) {
+        const int16_t ox[8] = { gx, (int16_t)-gx,  gx, (int16_t)-gx,  gy, (int16_t)-gy,  gy, (int16_t)-gy };
+        const int16_t oy[8] = { gy,  gy, (int16_t)-gy, (int16_t)-gy,  gx,  gx, (int16_t)-gx, (int16_t)-gx };
+        for (uint8_t p = 0; p < 8; p++) {
+            int16_t px = cx + ox[p] * PX;
+            int16_t py = cy + oy[p] * PX;
+            if (px < 0 || px > maxPxX || py < 0 || py > maxPxY) continue;
+            canvas.fillRect(px, py, PX, PX, color);
+        }
+        gy++;
+        if (d < 0) d += 2 * gy + 1; else { gx--; d += 2 * (gy - gx) + 1; }
+    }
+}
+
+void Avatar::drawWaveRipples(M5Canvas& canvas, bool faceRight, int startX, int startY) {
+    if (waveMode == WaveMode::NONE) return;
+    uint32_t now = millis();
+
+    // Geiger-counter clicks while the burst is actively radiating
+    static uint32_t nextGeigerClick = 0;
+    if (now < waveBurstEnd && now >= nextGeigerClick) {
+        SFX::tone((uint16_t)random(800, 1600), random(3, 8));
+        nextGeigerClick = now + random(80, 300);
+    }
+
+    // Gradual fade: after burst ends, suppress young rings over one cycle
+    const uint16_t FADE_MS = 3600;
+    float minProgress = 0.0f;
+    if (now >= waveBurstEnd) {
+        uint32_t fadeElapsed = now - waveBurstEnd;
+        if (fadeElapsed >= FADE_MS) { waveMode = WaveMode::NONE; return; }
+        minProgress = (float)fadeElapsed / (float)FADE_MS * 0.80f;
+    }
+    uint16_t color = getDrawColor();
+    const bool outgoing = (waveMode == WaveMode::OUTGOING);
+
+    int waveCX = faceRight ? (startX + 85) : (startX + 23);   // nose tip
+    int waveCY = startY + 31;
+
+    const uint8_t  COUNT    = outgoing ? 5 : waveIntensity;
+    const uint16_t CYCLE_MS = 3600;
+    const int16_t  R_MIN    = 0;
+    const int16_t  R_MAX    = 130;
+    const int16_t  MAX_PX_X = DISPLAY_W - PX;
+    const int16_t  MAX_PX_Y = MAIN_H - PX;
+    const int16_t  GRID_STEPS = (R_MAX - R_MIN) / PX;
+    uint32_t elapsed = now - waveBurstStart;
+
+    // Tree screen X for the deauth-wave shake check (screen-relative wrap)
+    const int16_t WRAP_HI = DISPLAY_W + 20, WRAP_LO = -80, WRAP_SPAN = WRAP_HI - WRAP_LO;
+
+    for (uint8_t i = 0; i < COUNT; i++) {
+        uint32_t phaseOffset = i * (CYCLE_MS / COUNT);
+        uint32_t phase = (elapsed + phaseOffset) % CYCLE_MS;
+        float progress = (float)phase / (float)CYCLE_MS;
+        if (progress < minProgress) continue;
+        if (progress > 0.80f) continue;
+        float t = progress / 0.80f;
+
+        int16_t gridStep = (int16_t)(t * GRID_STEPS);
+        int16_t rRaw = R_MIN + gridStep * PX;
+        int16_t r = outgoing ? snapPx(rRaw) : snapPx(R_MIN + R_MAX - rRaw);
+        bool earlyLife = (t < 0.5f);
+
+        drawCircleRing(canvas, waveCX, waveCY, r, color, MAX_PX_X, MAX_PX_Y);
+        if (earlyLife) drawCircleRing(canvas, waveCX, waveCY, r + PX, color, MAX_PX_X, MAX_PX_Y);
+
+        // OUTGOING ring sweeping over the tree -> shake it
+        if (outgoing && !waveTreeShaking &&
+            (treePhase == TreePhase::ALIVE || treePhase == TreePhase::GROWING)) {
+            int16_t tbx = treeTrunk.baseX + treeScrollOffset;
+            while (tbx > WRAP_HI) tbx -= WRAP_SPAN;
+            while (tbx < WRAP_LO) tbx += WRAP_SPAN;
+            int32_t dx = tbx - waveCX, dy = 106 - waveCY;
+            int32_t dist2 = dx * dx + dy * dy;
+            int32_t rOuter = r + treeTrunk.crownRadius;
+            int32_t rInner = r - treeTrunk.crownRadius; if (rInner < 0) rInner = 0;
+            if (dist2 <= rOuter * rOuter && dist2 >= rInner * rInner) {
+                waveTreeShaking = true; waveTreeShakeStart = now;
+            }
+        }
+    }
+}
+
+bool Avatar::checkBirdWaveCollision(int16_t bx, int16_t by) {
+    if (waveMode != WaveMode::OUTGOING) return false;
+    uint32_t now = millis();
+    if (now >= waveBurstEnd) return false;
+    int waveCX = facingRight ? (currentX + 85) : (currentX + 23);
+    int waveCY = 40 + 31;  // nominal startY=40
+    uint32_t elapsed = now - waveBurstStart;
+    const uint16_t CYCLE_MS = 3600;
+    const int16_t R_MAX = 130;
+    const uint8_t COUNT = 5;
+    int32_t dx = (int32_t)bx - waveCX, dy = (int32_t)by - waveCY;
+    int32_t dist2 = dx * dx + dy * dy;
+    for (uint8_t i = 0; i < COUNT; i++) {
+        uint32_t phaseOffset = i * (CYCLE_MS / COUNT);
+        uint32_t phase = (elapsed + phaseOffset) % CYCLE_MS;
+        float progress = (float)phase / (float)CYCLE_MS;
+        if (progress > 0.80f) continue;
+        int16_t r = (int16_t)((progress / 0.80f) * R_MAX);
+        int32_t rOuter = r + 4, rInner = r - 4; if (rInner < 0) rInner = 0;
+        if (dist2 <= rOuter * rOuter && dist2 >= rInner * rInner) return true;
+    }
+    return false;
 }
 
 void Avatar::draw(M5Canvas& canvas) {
@@ -411,10 +682,12 @@ void Avatar::draw(M5Canvas& canvas) {
             int walkRoll = random(0, 100);
             int targetX;
             
-            // Define edge zones (bubble floats beside pig, not above)
-            const int LEFT_EDGE = 20;   // Left rest position
-            const int RIGHT_EDGE = 108; // Right rest position
-            
+            // Define edge zones (bubble floats beside pig, not above).
+            // Right edge is screen-relative so the pig reaches the actual right
+            // edge on the wider Pancake (108 @240, 188 @320).
+            const int LEFT_EDGE = 20;                 // Left rest position
+            const int RIGHT_EDGE = DISPLAY_W - 132;   // Right rest position
+
             if (walkRoll < 50) {
                 // 50%: Walk to opposite edge (primary behavior)
                 targetX = onRightSide ? LEFT_EDGE : RIGHT_EDGE;
@@ -424,7 +697,7 @@ void Avatar::draw(M5Canvas& canvas) {
             } else if (walkRoll < 95) {
                 // 10%: Short shuffle within current edge zone
                 if (onRightSide) {
-                    targetX = random(85, 108);  // Stay in right zone
+                    targetX = random(RIGHT_EDGE - 23, RIGHT_EDGE + 1);  // Stay in right zone
                 } else {
                     targetX = random(20, 45);   // Stay in left zone
                 }
@@ -496,8 +769,9 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
     // Star system background layer (behind pig)
     updateStars();
     drawStars(canvas);
-    drawTree(canvas);   // Fruit tree — behind the pig, on the grass line
     fillPigBoundingBox(canvas);
+    // NOTE: the fruit tree is now drawn AFTER the pig (below) so the pig doesn't
+    // block it — the pig stands behind the tree and shakes it.
 
     canvas.setTextDatum(top_left);
     canvas.setTextSize(3);
@@ -516,33 +790,90 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
         jumpActive = false;
     }
     
+    // === Attack hop: slide currentX along the pre-computed hop targets ===
+    if (attackHopActive) {
+        uint32_t hopElapsed = now - attackHopStartTime;
+        uint32_t totalHopTime = (uint32_t)attackHopTotal * ATTACK_HOP_MS;
+        if (hopElapsed >= totalHopTime) {
+            attackHopActive = false;
+            currentX = attackHopOriginX;
+            if (grassMoving) facingRight = !grassDirection;
+        } else {
+            uint8_t hopIdx = hopElapsed / ATTACK_HOP_MS;
+            if (hopIdx >= attackHopTotal) hopIdx = attackHopTotal - 1;
+            attackHopIndex = hopIdx;
+            float hopT = (float)(hopElapsed - hopIdx * ATTACK_HOP_MS) / (float)ATTACK_HOP_MS;
+            float smoothT = hopT * hopT * (3.0f - 2.0f * hopT);
+            int16_t fromX = (hopIdx == 0) ? attackHopOriginX : attackHopTargets[hopIdx - 1];
+            int16_t toX = attackHopTargets[hopIdx];
+            currentX = fromX + (int)((toX - fromX) * smoothT);
+            facingRight = (toX > fromX);
+        }
+    }
+
     // Calculate vertical shake/jump offset
     int shakeY = 0;
-    if (jumpActive) {
-        // Cute jump: smooth arc up and down (sine-like)
-        // First half: go up, second half: come down
+    if (attackHopActive) {
+        uint32_t hopElapsed = now - attackHopStartTime;
+        uint32_t hopLocal = hopElapsed - (uint32_t)attackHopIndex * ATTACK_HOP_MS;
+        float t = (float)hopLocal / (float)ATTACK_HOP_MS;
+        float arc = 4.0f * t * (1.0f - t);
+        shakeY = -(int)(arc * ATTACK_HOP_HEIGHT);
+    } else if (jumpActive) {
         uint32_t elapsed = now - jumpStartTime;
-        float t = (float)elapsed / (float)JUMP_DURATION_MS;  // 0.0 to 1.0
-        // Parabolic arc: peaks at t=0.5
-        float arc = 4.0f * t * (1.0f - t);  // 0 → 1 → 0
+        float t = (float)elapsed / (float)JUMP_DURATION_MS;
+        float arc = 4.0f * t * (1.0f - t);
         shakeY = -(int)(arc * JUMP_HEIGHT);  // Negative = up
     } else if (attackShakeActive) {
-        // Combat shake: random ±4px (normal) / ±6px (strong)
         const int amp = attackShakeStrong ? 6 : 4;
         shakeY = (esp_random() % 2 == 0) ? amp : -amp;
+    } else if (spinActive) {
+        uint32_t elapsed = now - spinStart;
+        if (elapsed >= SPIN_DURATION_MS) { spinActive = false; }
+        else {
+            float t = (float)elapsed / (float)SPIN_DURATION_MS;
+            shakeY = -(int)(4.0f * t * (1.0f - t) * JUMP_HEIGHT);
+            uint8_t flipPhase = elapsed / (SPIN_DURATION_MS / SPIN_FLIPS);
+            facingRight = (flipPhase % 2 == 0);
+        }
+    } else if (perkUpActive) {
+        uint32_t elapsed = now - perkUpStart;
+        if (elapsed >= PERK_UP_DURATION_MS) { perkUpActive = false; }
+        else { float t = (float)elapsed / (float)PERK_UP_DURATION_MS;
+               shakeY = -(int)(4.0f * t * (1.0f - t) * PERK_UP_HEIGHT); }
+    } else if (flinchActive) {
+        uint32_t elapsed = now - flinchStart;
+        if (elapsed >= FLINCH_DURATION_MS) { flinchActive = false; }
+        else if (elapsed < 150) shakeY = 3;                      // duck down
+        else shakeY = (esp_random() % 2 == 0) ? 2 : -2;          // jitter
+    } else if (pawScratchActive) {
+        if (now - pawScratchStart >= PAW_SCRATCH_DURATION_MS) pawScratchActive = false;
+        // no Y offset — X oscillation handled below
+    } else if (treeColliding) {
+        shakeY = ((now / 40) % 3 == 0) ? -2 : ((now / 40) % 3 == 1) ? 2 : 0;
     } else if (transitioning || grassMoving) {
-        // Heavy walk bounce: 4-phase weighted pattern (heavier landing feel)
-        // Phase: down(0) → up-overshoot(-3) → settle-low(-1) → settle-mid(-2)
-        // 80ms per phase = 320ms full cycle, slower than Sirloin's snappy bounce
         static const int bouncePattern[4] = {0, -3, -1, -2};
         int phase = (now / 80) % 4;
         shakeY = bouncePattern[phase];
+    } else {
+        // Idle breathing: triangle wave, 3s period, 0 to -2px (lift only)
+        uint32_t breathePhase = now % 3000;
+        shakeY = (breathePhase < 1500) ? -(int)(breathePhase * 2 / 1500)
+                                       : -(int)((3000 - breathePhase) * 2 / 1500);
     }
-    
+
     // Use animated currentX position (set during transition or at rest)
     int startX = currentX;
-    int startY = 23 + shakeY;  // Apply shake offset (shifted down for XP bar at top)
+    if (pawScratchActive) {
+        uint32_t elapsed = now - pawScratchStart;
+        startX += ((elapsed / 100) % 2 == 0) ? 2 : -2;   // paw scratch X oscillation
+    }
+    if (treeColliding) startX += ((now / 50) % 2 == 0) ? PX : -PX;  // bonk into trunk
+    int startY = 40 + shakeY;  // pig feet align with the grass ground (baseY=106)
     int lineHeight = 22;
+
+    // Radio-activity wave ripples behind the pig (scan = incoming, deauth = outgoing)
+    drawWaveRipples(canvas, faceRight, startX, startY);
     
     for (uint8_t i = 0; i < lines; i++) {
         // Handle body line (i=2) for dynamic tail
@@ -567,12 +898,20 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
                     strncpy(bodyLine, "(    )z", sizeof(bodyLine));  // Tail trails on right
                 }
             } else {
-                // Stationary: always show tail based on facing direction
+                // Stationary: static 'z' tail, burst wiggle (z/~) on celebrations
+                char tail = 'z';
+                if (tailWiggleActive) {
+                    if ((now - tailWiggleStart) < TAIL_WIGGLE_DURATION_MS) {
+                        tail = ((now / 120) % 2 == 0) ? 'z' : '~';  // ~4 waggles/sec
+                    } else {
+                        tailWiggleActive = false;
+                    }
+                }
                 if (faceRight) {
-                    strncpy(bodyLine, "z(    )", sizeof(bodyLine));  // Facing right, tail on left
+                    snprintf(bodyLine, sizeof(bodyLine), "%c(    )", tail);  // tail on left
                     tailOnLeft = true;
                 } else {
-                    strncpy(bodyLine, "(    )z", sizeof(bodyLine));  // Facing left, tail on right
+                    snprintf(bodyLine, sizeof(bodyLine), "(    )%c", tail);  // tail on right
                 }
             }
             bodyLine[sizeof(bodyLine) - 1] = '\0';
@@ -621,9 +960,16 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
             canvas.drawString(frame[i], startX, startY + i * lineHeight);
         }
     }
-    
+
+    // Fruit tree — drawn IN FRONT of the pig (pig stands behind it and shakes it).
+    // (Collision state it sets is consumed by the pig one frame later — fine.)
+    drawTree(canvas);
+
     // Draw grass below piglet
     drawGrass(canvas);
+
+    // Celebration sparkles on top of everything
+    updateAndDrawSparkles(canvas);
 }
 
 void Avatar::setGrassMoving(bool moving, bool directionRight) {
@@ -645,10 +991,10 @@ void Avatar::setGrassMoving(bool moving, bool directionRight) {
         
         grassDirection = directionRight;
         
-        // Calculate correct treadmill position based on direction
-        // Grass RIGHT: pig at X=108 (tail margin on right)
-        // Grass LEFT: pig at X=20 (tail margin on left: 20-18=2)
-        int targetX = directionRight ? 108 : 20;
+        // Calculate correct treadmill position based on direction.
+        // Grass RIGHT: pig walks to the right edge (108 @240, 188 @320 — screen-relative)
+        // Grass LEFT:  pig at X=20 (tail margin on left: 20-18=2)
+        int targetX = directionRight ? (DISPLAY_W - 132) : 20;
         
         if (transitioning) {
             // Check if this is a coast-back transition (pig returning to rest at X=20)
@@ -694,62 +1040,190 @@ void Avatar::setGrassSpeed(uint16_t ms) {
     grassSpeed = ms;
 }
 
-void Avatar::setGrassPattern(const char* pattern) {
-    strncpy(grassPattern, pattern, 26);
-    grassPattern[26] = '\0';
+void Avatar::setGrassPattern(const char*) {
+    // No-op: pixel-blade grass has no character pattern (kept for API compat).
 }
 
 void Avatar::resetGrassPattern() {
-    // Reset to random grass pattern /\/\\//\/
-    for (int i = 0; i < 26; i++) {
-        grassPattern[i] = (random(0, 2) == 0) ? '/' : '\\';
+    grassOffset = 0;
+    for (int i = 0; i < GRASS_BLADE_MAX; i++) {
+        grassBlades[i].height = random(6, 20);
+        grassBlades[i].lean   = random(-3, 4);
+        grassBlades[i].width  = random(1, 4);
     }
-    grassPattern[26] = '\0';
 }
 
 void Avatar::updateGrass() {
     if (!grassMoving) return;
-    
+
+    const int count    = DISPLAY_W / GRASS_STRIDE;   // 30 (V8) / 40 (Pancake)
+    const int16_t span = DISPLAY_W + 60;             // tree-offset wrap span
+
     uint32_t now = millis();
-    if (now - lastGrassUpdate < grassSpeed) return;
+    // Pixel-level scroll: shift 1px every grassSpeed/STRIDE ms (smooth).
+    uint32_t pixelInterval = grassSpeed / GRASS_STRIDE;
+    if (pixelInterval < 1) pixelInterval = 1;
+    if (now - lastGrassUpdate < pixelInterval) return;
     lastGrassUpdate = now;
-    
-    // Shift pattern based on grassDirection (set when grass started)
-    // grassDirection=true: grass scrolls RIGHT (pig faces left, walking left through world)
-    // grassDirection=false: grass scrolls LEFT (pig faces right, walking right through world)
-    if (grassDirection) {
-        // Shift right (grass scrolls right)
-        char last = grassPattern[25];
-        for (int i = 25; i > 0; i--) {
-            grassPattern[i] = grassPattern[i - 1];
+
+    // The tree is part of the world: it scrolls 1px per grass pixel (original).
+    if (grassDirection) {                 // world scrolls right
+        grassOffset++;
+        if (treePhase != TreePhase::HIDDEN) treeScrollOffset++;
+        if (grassOffset >= GRASS_STRIDE) {
+            grassOffset = 0;
+            GrassBlade last = grassBlades[count - 1];
+            for (int i = count - 1; i > 0; i--) grassBlades[i] = grassBlades[i - 1];
+            grassBlades[0] = last;
+            if (treeScrollOffset > span) treeScrollOffset -= span;
         }
-        grassPattern[0] = last;
-    } else {
-        // Shift left (grass scrolls left)
-        char first = grassPattern[0];
-        for (int i = 0; i < 25; i++) {
-            grassPattern[i] = grassPattern[i + 1];
+    } else {                              // world scrolls left
+        grassOffset--;
+        if (treePhase != TreePhase::HIDDEN) treeScrollOffset--;
+        if (grassOffset < 0) {
+            grassOffset = GRASS_STRIDE - 1;
+            GrassBlade first = grassBlades[0];
+            for (int i = 0; i < count - 1; i++) grassBlades[i] = grassBlades[i + 1];
+            grassBlades[count - 1] = first;
+            if (treeScrollOffset < -span) treeScrollOffset += span;
         }
-        grassPattern[25] = first;
     }
-    
-    // Occasionally mutate a character for variety
+
+    // ~3% chance: re-randomize one blade for organic variety.
     if (random(0, 30) == 0) {
-        int pos = random(0, 26);
-        grassPattern[pos] = (random(0, 2) == 0) ? '/' : '\\';
+        int idx = random(0, count);
+        grassBlades[idx].height = random(6, 20);
+        grassBlades[idx].lean   = random(-3, 4);
+        grassBlades[idx].width  = random(1, 4);
     }
 }
 
 void Avatar::drawGrass(M5Canvas& canvas) {
     updateGrass();
-    
-    canvas.setTextSize(2);  // Same as menu items
-    canvas.setTextColor(realActive() ? REAL_GRASS : getDrawColor());  // green grass in Realistic
-    canvas.setTextDatum(top_left);
 
-    // Draw at bottom of avatar area, full screen width
-    int grassY = 91;  // Below the pig face (at edge of main canvas)
-    canvas.drawString(grassPattern, 0, grassY);
+    uint32_t now = millis();
+    uint16_t color = realActive() ? REAL_GRASS : getDrawColor();  // green in Realistic
+    const int16_t baseY = 106;                 // ground line (matches the tree)
+    const int count  = DISPLAY_W / GRASS_STRIDE;
+    const int center = DISPLAY_W / 2;
+
+    // Shake state (screen-shake ripple through the blades)
+    bool  shakeActive    = Display::isShaking();
+    float shakeDecay     = shakeActive ? Display::getShakeDecay() : 0.0f;
+    uint8_t shakeIntensity = shakeActive ? Display::getShakeIntensity() : 0;
+
+    // Solid ground line
+    canvas.fillRect(0, snapPx(baseY - 1), DISPLAY_W, PX, color);
+
+    // Pig footprint (for grass bending) — ~108px pig at currentX.
+    // (Always on the ground until the jump/attack-hop animations land in stage 3.)
+    bool pigOnGround = true;
+    int pigLeft   = currentX + 9;
+    int pigRight  = currentX + 99;
+    int pigCenter = (pigLeft + pigRight) / 2;
+    int pigHalf   = (pigRight - pigLeft) / 2;
+
+    // Tree screen X (for the collision ripple)
+    const int16_t WRAP_HI = DISPLAY_W + 20, WRAP_LO = -80, WRAP_SPAN = WRAP_HI - WRAP_LO;
+    int16_t treeScreenX = treeTrunk.baseX + treeScrollOffset;
+    while (treeScreenX > WRAP_HI) treeScreenX -= WRAP_SPAN;
+    while (treeScreenX < WRAP_LO) treeScreenX += WRAP_SPAN;
+
+    for (int i = 0; i < count; i++) {
+        int16_t cx = i * GRASS_STRIDE + grassOffset;
+        if (cx < -GRASS_STRIDE) cx += DISPLAY_W + GRASS_STRIDE;
+        if (cx >= DISPLAY_W) continue;
+
+        const GrassBlade& b = grassBlades[i];
+        int16_t drawHeight = b.height;
+        int8_t  drawLean   = b.lean;
+
+        // Ambient wind sway — triangle wave, ~2.5s period, per-blade phase
+        {
+            uint32_t phase = now + (uint32_t)i * 197;
+            int wave = (int)(phase % 2500);
+            int sway = (wave < 1250) ? (wave - 625) : (1875 - wave);
+            drawLean += (int8_t)(sway * PX / 625);
+        }
+
+        // Bend grass under the pig body
+        if (pigOnGround && cx >= pigLeft && cx <= pigRight) {
+            int d = cx - pigCenter; if (d < 0) d = -d;
+            float bend = 1.0f - (float)d / (float)pigHalf;
+            drawHeight = b.height - (int16_t)((float)b.height * 0.7f * bend);
+            if (drawHeight < PX) drawHeight = PX;
+            int8_t leanPush = (int8_t)(4.0f * bend);
+            drawLean = (cx < pigCenter) ? (b.lean - leanPush) : (b.lean + leanPush);
+        }
+
+        // Shake impact ripple (strongest at center, fades to edges)
+        bool bladeInverted = false;
+        if (shakeActive && shakeDecay > 0.05f) {
+            float edgeDist = 1.0f - (float)(cx > center ? cx - center : center - cx) / (float)center;
+            if (edgeDist < 0.0f) edgeDist = 0.0f;
+            float impact = edgeDist * shakeDecay * ((float)shakeIntensity / 5.0f);
+            if (impact > 0.15f) drawLean += ((now / 33) % 2 == 0) ? PX : -PX;
+            if (impact > 0.5f)  bladeInverted = true;
+        }
+
+        // Tree-collision ripple from the trunk
+        if (treeColliding) {
+            int16_t dist = cx > treeScreenX ? cx - treeScreenX : treeScreenX - cx;
+            int16_t radius = (int16_t)treeTrunk.crownRadius * 3;
+            if (dist < radius) {
+                float falloff = 1.0f - (float)dist / (float)radius;
+                uint32_t phase = now + (uint32_t)(dist * 7);
+                int8_t jitter = ((phase / 33) % 2 == 0) ? PX : -PX;
+                drawLean += (int8_t)((float)jitter * falloff);
+            }
+        }
+
+        int16_t tipX = snapPx(cx + drawLean);
+        int16_t tipY = snapPx(baseY - drawHeight);
+        uint16_t bladeColor = (bladeInverted || (pigOnGround && cx >= pigLeft && cx <= pigRight))
+                              ? getBGColor() : color;
+        fatLine(canvas, snapPx(cx), baseY, tipX, tipY, bladeColor);
+    }
+
+    // === Dust trail particles (kicked up by the running pig) ===
+    bool isRunning = transitioning || grassMoving;
+    if (isRunning && pigOnGround && now - lastTrailSpawn > 70) {
+        lastTrailSpawn = now;
+        TrailParticle& p = trailParticles[trailSpawnIdx];
+        trailSpawnIdx = (trailSpawnIdx + 1) % TRAIL_COUNT;
+        if (facingRight) {
+            p.x = (float)(currentX + random(0, 20));
+            p.vx = -(1.0f + (float)random(0, 20) / 10.0f);
+        } else {
+            p.x = (float)(currentX + 88 + random(0, 20));
+            p.vx = 1.0f + (float)random(0, 20) / 10.0f;
+        }
+        p.y = (float)(96 + random(0, 10));
+        p.vy = -(0.2f + (float)random(0, 10) / 20.0f);
+        p.startX = p.x;
+        p.maxDist = 30.0f + (float)random(0, 31);
+        p.baseSize = random(1, 3);
+        p.active = true;
+    }
+    if (now - lastTrailUpdate > 50) {
+        lastTrailUpdate = now;
+        for (int i = 0; i < TRAIL_COUNT; i++) {
+            if (!trailParticles[i].active) continue;
+            trailParticles[i].x += trailParticles[i].vx;
+            trailParticles[i].y += trailParticles[i].vy;
+            float dx = trailParticles[i].x - trailParticles[i].startX;
+            if (dx < 0) dx = -dx;
+            if (dx >= trailParticles[i].maxDist) trailParticles[i].active = false;
+        }
+    }
+    for (int i = 0; i < TRAIL_COUNT; i++) {
+        if (!trailParticles[i].active) continue;
+        int tpx = snapPx((int16_t)trailParticles[i].x);
+        int tpy = snapPx((int16_t)trailParticles[i].y);
+        if (tpx < 0 || tpx >= DISPLAY_W) continue;
+        // Realistic theme: kicked-up dust is dusty brown, not grass-green.
+        canvas.fillRect(tpx, tpy, PX, PX, realActive() ? REAL_DIRT : color);
+    }
 }
 
 // --- Night sky star system ---
@@ -857,12 +1331,12 @@ void Avatar::fillPigBoundingBox(M5Canvas& canvas) {
 
     int boxX = currentX - 25;
     int boxW = 155;  // covers tail + 7 chars + margin
-    int boxY = 11;   // base y (23) minus jump headroom (12)
-    int boxH = 84;   // stops above grass near y95
+    int boxY = 28;   // base y (40) minus jump headroom (12)
+    int boxH = 84;   // down to the grass line (~112)
 
     // Clamp to screen
     if (boxX < 0) { boxW += boxX; boxX = 0; }
-    if (boxX + boxW > 240) boxW = 240 - boxX;
+    if (boxX + boxW > DISPLAY_W) boxW = DISPLAY_W - boxX;
 
     canvas.fillRect(boxX, boxY, boxW, boxH, getBGColor());
 }
@@ -957,10 +1431,6 @@ uint8_t Avatar::treePendingFruits = 0;
 uint32_t Avatar::treeAliveStart = 0;
 int16_t Avatar::treeScrollOffset = 0;
 
-// Tree-pig collision state (pig bumps into tree → both shake)
-static bool treeColliding = false;
-static int8_t treeCollisionShake = 0;  // rapid jitter applied to tree X
-
 // Dropping fruit system (individual fruit falls on deauth success)
 struct DroppingFruit {
     int16_t x, y;         // absolute screen position at detach
@@ -982,30 +1452,6 @@ struct FruitSplash {
 static constexpr uint8_t FRUIT_SPLASH_COUNT = 8;
 static FruitSplash fruitSplashes[FRUIT_SPLASH_COUNT] = {{0}};
 static uint8_t fruitSplashIdx = 0;
-
-// Fat pixel size = font scale factor (text size 3 = 3x3 blocks)
-static constexpr int16_t PX = 3;
-
-static inline int16_t snapPx(int16_t v) {
-    return (v >= 0) ? (v / PX) * PX : ((v - 2) / PX) * PX;
-}
-
-// Bresenham line on PX grid — stamps PX*PX blocks
-static void fatLine(M5Canvas& canvas, int16_t x1, int16_t y1,
-                    int16_t x2, int16_t y2, uint16_t color) {
-    int gx1 = x1 / PX, gy1 = y1 / PX;
-    int gx2 = x2 / PX, gy2 = y2 / PX;
-    int dx = abs(gx2 - gx1), dy = abs(gy2 - gy1);
-    int sx = (gx1 < gx2) ? 1 : -1, sy = (gy1 < gy2) ? 1 : -1;
-    int err = dx - dy;
-    while (true) {
-        canvas.fillRect(gx1 * PX, gy1 * PX, PX, PX, color);
-        if (gx1 == gx2 && gy1 == gy2) break;
-        int e2 = 2 * err;
-        if (e2 > -dy) { err -= dy; gx1 += sx; }
-        if (e2 < dx)  { err += dx; gy1 += sy; }
-    }
-}
 
 static uint32_t treeLCG(uint32_t& s) {
     s = s * 1664525u + 1013904223u;
@@ -1033,18 +1479,18 @@ void Avatar::generateTree(uint8_t fruitCount) {
     treeScrollOffset = 0;
     uint32_t s = treeSeed;
 
-    // Position: opposite side from pig (adjusted for 320px)
+    // Position: opposite side from pig (screen-relative; at 320 == 33-72 / 248-287)
     if (onRightSide) {
-        treeTrunk.baseX = 33 + (int16_t)(treeLCG(s) % 40);  // 33-72
+        treeTrunk.baseX = 33 + (int16_t)(treeLCG(s) % 40);                 // left
     } else {
-        treeTrunk.baseX = 248 + (int16_t)(treeLCG(s) % 40);  // 248-287
+        treeTrunk.baseX = (DISPLAY_W - 72) + (int16_t)(treeLCG(s) % 40);   // near right edge
     }
 
     // Ensure minimum gap from pig
     int16_t gap = abs(treeTrunk.baseX - currentX);
     if (gap < 60) {
-        treeTrunk.baseX = (currentX < 160) ? 240 + (int16_t)(treeLCG(s) % 40)
-                                            : 33 + (int16_t)(treeLCG(s) % 40);
+        treeTrunk.baseX = (currentX < DISPLAY_W / 2) ? (DISPLAY_W - 80) + (int16_t)(treeLCG(s) % 40)
+                                                     : 33 + (int16_t)(treeLCG(s) % 40);
     }
 
     // Trunk dimensions — proportional to 107px canvas
@@ -1256,9 +1702,10 @@ void Avatar::dropFruit() {
     const TreeFruit& f = treeFruits[idx];
 
     const int16_t baseY = 106;
+    const int16_t WRAP_HI = DISPLAY_W + 20, WRAP_LO = -80, WRAP_SPAN = WRAP_HI - WRAP_LO;
     int16_t bx = treeTrunk.baseX + treeScrollOffset;
-    while (bx > 340) bx -= 420;    // 320px wrap bounds
-    while (bx < -80) bx += 420;
+    while (bx > WRAP_HI) bx -= WRAP_SPAN;    // screen-relative wrap
+    while (bx < WRAP_LO) bx += WRAP_SPAN;
 
     // Ambient sway (match drawTree logic)
     int8_t sway = 0;
@@ -1363,25 +1810,22 @@ static void fatFruit(M5Canvas& canvas, int16_t cx, int16_t cy, int r,
 void Avatar::drawTree(M5Canvas& canvas) {
     updateTree();
 
-    // --- Drift the tree toward the trotting pig so it actually gets shaken ---
-    // The original coupled treeScrollOffset to the grass scroll (world moving
-    // under the walking pig); the Pancake grass is ASCII with no pixel scroll,
-    // so we drift the tree toward the pig's body centre while it's moving.
-    if ((treePhase == TreePhase::ALIVE || treePhase == TreePhase::GROWING) &&
-        (grassMoving || transitioning)) {
-        int16_t treeX = treeTrunk.baseX + treeScrollOffset;
-        int16_t pigCenter = currentX + 54;
-        if (treeX > pigCenter + treeTrunk.crownRadius) treeScrollOffset -= 1;
-        else if (treeX < pigCenter - treeTrunk.crownRadius) treeScrollOffset += 1;
-    }
+    // World-scroll wrap bounds, screen-relative so the tree isn't parked
+    // off-screen on the narrow V8 panel (320-wide Pancake: 340/-80/420).
+    const int16_t WRAP_HI   = DISPLAY_W + 20;
+    const int16_t WRAP_LO   = -80;
+    const int16_t WRAP_SPAN = WRAP_HI - WRAP_LO;
 
-    // --- Pig-tree collision: when the pig walks up to the tree it shakes ---
+    // The tree scrolls WITH the world — coupled 1px-per-grass-pixel in
+    // updateGrass() (original behaviour), so it passes the pig from either side.
+
+    // --- Pig-tree collision: when a tree scrolls onto the pig it shakes ---
     treeColliding = false;
     treeCollisionShake = 0;
     if (treePhase == TreePhase::ALIVE || treePhase == TreePhase::GROWING) {
         int16_t tbx = treeTrunk.baseX + treeScrollOffset;
-        while (tbx > 340) tbx -= 420;
-        while (tbx < -80) tbx += 420;
+        while (tbx > WRAP_HI) tbx -= WRAP_SPAN;
+        while (tbx < WRAP_LO) tbx += WRAP_SPAN;
         int16_t treeLeft  = tbx - treeTrunk.crownRadius;
         int16_t treeRight = tbx + treeTrunk.crownRadius;
         int16_t pigL = currentX + 18;
@@ -1391,6 +1835,19 @@ void Avatar::drawTree(M5Canvas& canvas) {
             treeCollisionShake = ((millis() / 33) % 2 == 0) ? PX : -PX;
         }
     }
+    // Deauth wave ring swept over the tree -> shake it for a short window.
+    if (waveTreeShaking) {
+        if (millis() - waveTreeShakeStart < 600) {
+            treeColliding = true;
+            treeCollisionShake = ((millis() / 33) % 2 == 0) ? PX : -PX;
+        } else {
+            waveTreeShaking = false;
+        }
+    }
+
+    // Grunt on the first frame of a bump (edge detect).
+    if (treeColliding && !wasTreeColliding) SFX::play(SFX::OINK_GRUNT);
+    wasTreeColliding = treeColliding;
 
     // Check if any dropping fruits are still active
     bool hasDropping = false;
@@ -1414,9 +1871,9 @@ void Avatar::drawTree(M5Canvas& canvas) {
 
     const int16_t baseY = 106;
     int16_t bx = treeTrunk.baseX + treeScrollOffset;
-    // Wrap to screen bounds (320px)
-    while (bx > 340) bx -= 420;
-    while (bx < -80) bx += 420;
+    // Wrap to screen bounds (screen-relative)
+    while (bx > WRAP_HI) bx -= WRAP_SPAN;
+    while (bx < WRAP_LO) bx += WRAP_SPAN;
 
     // Ambient sway when alive: ±1 fat pixel, 3s period triangle wave
     int8_t sway = 0;
@@ -1582,7 +2039,7 @@ void Avatar::drawTree(M5Canvas& canvas) {
         if (!fruitSplashes[i].active) continue;
         int spx = snapPx((int16_t)fruitSplashes[i].x);
         int spy = snapPx((int16_t)fruitSplashes[i].y);
-        if (spx < 0 || spx >= 320) continue;
+        if (spx < 0 || spx >= DISPLAY_W) continue;
         if ((float)(now - fruitSplashes[i].spawnTime) / 500.0f >= 1.0f) continue;
         canvas.fillRect(spx, spy, PX, PX, splashCol);
     }

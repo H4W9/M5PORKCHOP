@@ -9,7 +9,7 @@
 #include "pancake_hal_impl.h"
 
 // ---- Hardware object pointers (null until pancakeHalInit()) ----------------
-FT6336Touch*     pancakeTouch    = nullptr;
+PancakeTouch*    pancakeTouch    = nullptr;   // FT6336 (Pancake) or XPT2046 (V8)
 PancakeKeyboard* pancakeKeyboard = nullptr;
 TFT_eSPI*        pancakeTFT      = nullptr;
 
@@ -90,7 +90,7 @@ void pancakeRedrawKeyboard() {
 // ---- One-time hardware init — call from setup() BEFORE M5Cardputer.begin() -
 void pancakeHalInit() {
     pancakeTFT      = new TFT_eSPI();
-    pancakeTouch    = new FT6336Touch();
+    pancakeTouch    = new PancakeTouch();   // FT6336 (Pancake) / XPT2046 (V8)
     pancakeKeyboard = new PancakeKeyboard();
     pancakeM5Cardputer = new M5Cardputer_Class();
     pancakeM5          = new M5Unified_Class();

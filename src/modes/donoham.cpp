@@ -285,9 +285,10 @@ void DoNoHamMode::stop() {
     running = false;
     dnhBusy = true;
     
-    // Stop grass animation and the fruit tree
+    // Stop grass animation, the fruit tree, and wave ripples
     Avatar::setGrassMoving(false);
     Avatar::hideTree();
+    Avatar::waveRipple(WaveMode::NONE);
 
     bool pausedByUs = false;
     if (NetworkRecon::isRunning()) {
@@ -647,6 +648,7 @@ void DoNoHamMode::update() {
     if (isHopping != wasHopping) {
         Avatar::setGrassMoving(isHopping);
     }
+    if (isHopping) Avatar::waveRipple(WaveMode::INCOMING);  // converging waves while scanning
 
     // Fruit tree: show while hunting a hot channel
     {

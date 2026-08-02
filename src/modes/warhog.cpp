@@ -8,6 +8,7 @@
 
 #include "warhog.h"
 #include "oink.h"
+#include "../audio/sfx.h"
 #include "../build_info.h"
 #include "../core/config.h"
 #include "../core/wifi_utils.h"
@@ -254,7 +255,8 @@ void WarhogMode::start() {
     
     running = true;
     lastScanTime = 0;  // Trigger immediate scan
-    
+    SFX::play(SFX::RADAR_SWEEP);  // wardriving sweep spins up
+
     // Set grass speed for wardriving - animation controlled by GPS lock in update()
     Avatar::setGrassSpeed(200);  // Slower than OINK (~5 FPS)
     Avatar::setGrassMoving(GPS::hasFix());  // Start based on current GPS status
@@ -297,9 +299,10 @@ void WarhogMode::stop() {
     scanInProgress = false;
     scanResult = -2;
     
-    // Stop grass animation
+    // Stop grass animation and wave ripples
     Avatar::setGrassMoving(false);
-    
+    Avatar::waveRipple(WaveMode::NONE);
+
     running = false;
     
     // Put GPS to sleep if power management enabled
@@ -381,8 +384,10 @@ void WarhogMode::update() {
     bool hasGPSFix = GPS::hasFix();
     if (hasGPSFix != lastGPSState) {
         Avatar::setGrassMoving(hasGPSFix);
+        if (hasGPSFix) SFX::play(SFX::SONAR_PING);  // GPS lock acquired — contact ping
         lastGPSState = hasGPSFix;
     }
+    if (hasGPSFix) Avatar::waveRipple(WaveMode::INCOMING);  // scanning waves while wardriving
     
     // Distance tracking for XP (every 5 seconds when GPS is available)
     if (hasGPSFix && now - lastDistanceCheck >= 5000) {
@@ -431,6 +436,7 @@ void WarhogMode::update() {
     
     // Start new scan if interval elapsed and not already scanning
     if (now - lastScanTime >= scanInterval) {
+        SFX::play(SFX::SCAN_TICK);  // quiet heartbeat each scan cycle (~5s)
         performScan();
         lastScanTime = now;
     }

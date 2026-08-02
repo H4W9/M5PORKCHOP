@@ -289,6 +289,17 @@ static void ensureSdSpiReady() {
 #endif
     sdSpiBegun = true;
     delay(20);
+
+    // SD power-up sequence: the card needs >=74 clock cycles with CS HIGH and
+    // MOSI HIGH to enter SPI mode. On the Pancake the SD shares the FSPI bus
+    // with the TFT, so at cold boot it hasn't seen these clocks and its first
+    // CMD0 fails ("Card Failed! cmd: 0x00") until a retry happens to supply
+    // them. Send them explicitly so SD.begin() succeeds on the first attempt.
+    digitalWrite(SD_CS_PIN, HIGH);  // keep card de-selected during priming
+    sdSPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
+    for (int i = 0; i < 12; i++) sdSPI.transfer(0xFF);  // 12 bytes = 96 clocks (>74)
+    sdSPI.endTransaction();
+    delay(2);
 }
 
 bool Config::init() {

@@ -93,4 +93,6 @@ private:
     }
 };
 
-extern FT6336Touch* pancakeTouch;
+// Board-agnostic touch alias (V8 aliases XPT2046Touch instead — same surface).
+typedef FT6336Touch PancakeTouch;
+extern PancakeTouch* pancakeTouch;

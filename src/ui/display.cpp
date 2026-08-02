@@ -8,6 +8,7 @@
 #include <string.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/portmacro.h>
+#include <esp_random.h>
 #include "../core/porkchop.h"
 #include "../core/config.h"
 #include "../core/xp.h"
@@ -190,6 +191,12 @@ uint32_t Display::lastActivityTime = 0;
 bool Display::dimmed = false;
 bool Display::screenForcedOff = false;
 bool Display::snapping = false;
+
+// Screen shake state
+bool     Display::screenShakeActive    = false;
+uint32_t Display::screenShakeStart     = 0;
+uint16_t Display::screenShakeDuration  = 200;
+uint8_t  Display::screenShakeIntensity = 3;
 char Display::toastMessage[160] = {0};
 uint32_t Display::toastStartTime = 0;
 uint32_t Display::toastDurationMs = 2000;
@@ -364,6 +371,7 @@ void Display::update() {
             Avatar::draw(*mainCanvas);
             // Draw clouds above stars/pig before rain
             Weather::drawClouds(*mainCanvas, getCloudColor());
+            Weather::drawBirds(*mainCanvas, COLOR_FG);
             // Draw weather effects (rain, wind particles) over avatar
             Weather::draw(*mainCanvas, COLOR_FG, COLOR_BG);
             // Draw mood bubble LAST so it's always on top
@@ -378,6 +386,7 @@ void Display::update() {
             Avatar::draw(*mainCanvas);
             // Draw clouds above stars/pig before rain
             Weather::drawClouds(*mainCanvas, getCloudColor());
+            Weather::drawBirds(*mainCanvas, COLOR_FG);
             // Draw weather effects (rain, wind particles) over avatar
             Weather::draw(*mainCanvas, COLOR_FG, COLOR_BG);
             // Draw mood bubble LAST so it's always on top
@@ -533,11 +542,47 @@ void Display::clear() {
     pushAll();
 }
 
+void Display::triggerScreenShake(uint8_t intensity, uint16_t durationMs) {
+    if (intensity > 5) intensity = 5;
+    screenShakeActive = true;
+    screenShakeStart = millis();
+    screenShakeDuration = durationMs;
+    screenShakeIntensity = intensity;
+}
+
+bool Display::isShaking() { return screenShakeActive; }
+
+float Display::getShakeDecay() {
+    if (!screenShakeActive) return 0.0f;
+    uint32_t elapsed = millis() - screenShakeStart;
+    if (elapsed >= screenShakeDuration) return 0.0f;
+    return 1.0f - (float)elapsed / (float)screenShakeDuration;
+}
+
+uint8_t Display::getShakeIntensity() {
+    return screenShakeActive ? screenShakeIntensity : 0;
+}
+
 void Display::pushAll() {
+    // Screen-shake jitter offset (decays over the shake duration).
+    int offsetX = 0, offsetY = 0;
+    if (screenShakeActive) {
+        uint32_t elapsed = millis() - screenShakeStart;
+        if (elapsed >= screenShakeDuration) {
+            screenShakeActive = false;
+        } else {
+            float decay = 1.0f - (float)elapsed / (float)screenShakeDuration;
+            int amp = (int)(screenShakeIntensity * decay);
+            if (amp > 0) {
+                offsetX = (int)(esp_random() % (amp * 2 + 1)) - amp;
+                offsetY = (int)(esp_random() % (amp * 2 + 1)) - amp;
+            }
+        }
+    }
     M5.Display.startWrite();
-    topBar->pushSprite(0, 0);
-    mainCanvas->pushSprite(0, TOP_BAR_H);
-    bottomBar->pushSprite(0, DISPLAY_H - BOTTOM_BAR_H);
+    topBar->pushSprite(offsetX, offsetY);
+    mainCanvas->pushSprite(offsetX, TOP_BAR_H + offsetY);
+    bottomBar->pushSprite(offsetX, DISPLAY_H - BOTTOM_BAR_H + offsetY);
     M5.Display.endWrite();
 
 #ifdef PORKCHOP_PANCAKE
@@ -1338,7 +1383,11 @@ void Display::showBootSplash() {
     disp.drawString("PORKCHOP", DISPLAY_W/2, DISPLAY_H/2 - 15);
     disp.setTextSize(1);
     disp.drawString("BASICALLY YOU, BUT AS AN ASCII PIG.", DISPLAY_W/2, DISPLAY_H/2 + 20);
+#ifdef PORKCHOP_MARAUDER_V8
+    disp.drawString("V8 EDITION.", DISPLAY_W/2, DISPLAY_H/2 + 35);
+#else
     disp.drawString("PANCAKE EDITION.", DISPLAY_W/2, DISPLAY_H/2 + 35);
+#endif
     bootSplashDelay(1200);
     const char* cs = Config::personality().callsign;
     if (cs[0] != '\0') {
@@ -1521,8 +1570,12 @@ void Display::clearTopBarMessage() {
 // NeoPixel LED pin
 #ifdef PORKCHOP_PANCAKE
 #define LED_PIN PANCAKE_LED_PIN
+// pancakeLedWrite() is provided by pancake_hal_impl.h (board-aware).
 #else
 #define LED_PIN 21   // M5Cardputer NeoPixel on GPIO 21
+static inline void pancakeLedWrite(uint8_t r, uint8_t g, uint8_t b) {
+    rgbLedWrite(LED_PIN, r, g, b);  // rgbLedWrite replaces deprecated neopixelWrite
+}
 #endif
 #define SIREN_COOLDOWN_MS 2000
 
@@ -1541,10 +1594,10 @@ void Display::setLED(uint8_t r, uint8_t g, uint8_t b) {
     
     // Disable LED above 85% brightness
     if (displayBrightness > 85) {
-        neopixelWrite(LED_PIN, 0, 0, 0);
+        pancakeLedWrite(0, 0, 0);
         return;
     }
-    
+
     // Scale RGB values based on display brightness
     if (displayBrightness > 50) {
         uint8_t scale = map(displayBrightness, 50, 85, 255, 128);
@@ -1552,8 +1605,8 @@ void Display::setLED(uint8_t r, uint8_t g, uint8_t b) {
         g = (g * scale) / 255;
         b = (b * scale) / 255;
     }
-    
-    neopixelWrite(LED_PIN, r, g, b);
+
+    pancakeLedWrite(r, g, b);
 }
 
 void Display::showLevelUp(uint8_t oldLevel, uint8_t newLevel) {
@@ -1612,7 +1665,13 @@ void Display::showLevelUp(uint8_t oldLevel, uint8_t newLevel) {
     
     // Celebratory beep sequence - non-blocking
     SFX::play(SFX::LEVEL_UP);
-    
+
+    // Spin + jump + sparkles + tail wiggle celebration!
+    Avatar::spin();
+    Avatar::cuteJump();
+    Avatar::triggerSparkles(6);
+    Avatar::triggerTailWiggle();
+
     // Auto-dismiss after 2.5 seconds or on any key press
     uint32_t startTime = millis();
     while ((millis() - startTime) < 2500) {
@@ -3133,9 +3192,14 @@ bool Display::takeScreenshot() {
         return false;
     }
     
-    // BMP file structure for 240x135 24-bit image
+    // BMP dimensions. On the C5 builds capture the FULL panel (content pane +
+    // the keyboard/strip/overlay below it), not just the porkchop pane.
     int image_width = DISPLAY_W;
+#ifdef PORKCHOP_PANCAKE
+    int image_height = PANCAKE_SCREEN_H;
+#else
     int image_height = DISPLAY_H;
+#endif
     
     // Horizontal lines must be padded to multiple of 4 bytes
     const uint32_t pad = (4 - (3 * image_width) % 4) % 4;
@@ -3179,14 +3243,27 @@ bool Display::takeScreenshot() {
     
     // BMP stores bottom-to-top, so read from bottom up.
 #ifdef PORKCHOP_PANCAKE
-    // The ST7796 does not support reliable SPI pixel read-back (readRectRGB
-    // returns corrupt data). Instead, read directly from the in-memory sprite
-    // buffers that make up the porkchop pane (topBar / mainCanvas / bottomBar).
-    // Each is 16bpp RGB565; convert to 24-bit BGR for the BMP.
+    // The panel does not support reliable SPI pixel read-back, so read from the
+    // in-memory sprites instead. The porkchop pane comes from topBar/mainCanvas/
+    // bottomBar; the keyboard (drawn straight to the TFT) is re-rendered into a
+    // temporary sprite so it's captured too. Each is 16bpp RGB565 -> 24-bit BGR.
+    const int kbTop = pancakeKeyboard ? pancakeKeyboard->screenshotTop() : image_height;
+    const int kbH   = image_height - kbTop;
+    M5Canvas kbShot(pancakeTFT);
+    bool haveKb = false;
+    if (kbH > 0 && pancakeKeyboard) {
+        if (kbShot.createSprite(image_width, kbH)) {
+            kbShot.fillSprite(TFT_BLACK);
+            pancakeKeyboard->renderInto(&kbShot, (int16_t)-kbTop);  // template picks sprite methods
+            haveKb = true;
+        }
+    }
     for (int y = image_height - 1; y >= 0; y--) {
         for (int x = 0; x < image_width; x++) {
             uint16_t c = 0;
-            if (y < TOP_BAR_H) {
+            if (y >= kbTop) {
+                if (haveKb) c = kbShot.readPixel(x, y - kbTop);   // keyboard region
+            } else if (y < TOP_BAR_H) {
                 if (topBar) c = topBar->readPixel(x, y);
             } else if (y < TOP_BAR_H + MAIN_H) {
                 if (mainCanvas) c = mainCanvas->readPixel(x, y - TOP_BAR_H);
@@ -3202,6 +3279,7 @@ bool Display::takeScreenshot() {
         }
         file.write(line_data, image_width * 3 + pad);
     }
+    if (haveKb) kbShot.deleteSprite();
 #else
     for (int y = image_height - 1; y >= 0; y--) {
         // Read one line of RGB data from display

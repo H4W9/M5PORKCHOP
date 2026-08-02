@@ -1,19 +1,16 @@
 #pragma once
 // =============================================================
-//  PancakeKeyboard — touch QWERTY keyboard for PORKCHOP PANCAKE
+//  PancakeKeyboard — touch QWERTY keyboard for the ESP32-C5 porkchop builds.
 //
-//  Rendered in the bottom 240 px of the 320x480 portrait screen.
+//  Same layout on both boards; only the geometry (from pancake_config.h) differs:
+//    Pancake (ST7796 320x480): bottom 240 px.
+//    Marauder V8 (ILI9341 240x320): bottom 185 px (content pane is only 135 px).
+//  Hardcoded key widths scale with PANCAKE_SCREEN_W so the identical layout fits
+//  both 320 px and 240 px (at 320 the values are unchanged).
 //
-//  Keys are coloured:
-//    RED   = attack/chaos shortcuts  (O B)
-//    GREEN = mode/nav shortcuts      (D W H F S T C 1 2 G
-//                                     ENTER BKSP ; . , / ` SPACE)
-//    WHITE = normal keys
-//
-//  API used by PancakeInput shim:
-//    begin(tft*)  — call once at startup, draws keyboard
-//    redraw()     — re-render full keyboard (call after screen clears)
-//    poll(ch, sp) — returns true + fills ch/sp when a key is tapped
+//  renderInto(tgt,yOff) redraws the keys into any target (a sprite) so the full
+//  screen — keyboard included — can be screenshotted on panels whose framebuffer
+//  can't be read back.
 // =============================================================
 
 #include <Arduino.h>
@@ -77,7 +74,7 @@ struct PKey {
 // ============================================================
 class PancakeKeyboard {
 public:
-    void begin(TFT_eSPI *tft, FT6336Touch *touch) {
+    void begin(TFT_eSPI *tft, PancakeTouch *touch) {
         _tft = tft;
         _touch = touch;
         _shifted = false;
@@ -88,33 +85,35 @@ public:
     void redraw() {
         if (!_tft) return;
         _tft->fillRect(0, PANCAKE_KB_Y, PANCAKE_SCREEN_W, PANCAKE_KB_H, KB_BG);
-        for (int i = 0; i < _n; i++) _drawKey(i, false);
+        for (int i = 0; i < _n; i++) _drawKeyTo(_tft, i, false, 0);
     }
 
+    // Redraw the keys into `tgt` (a sprite), each key's screen Y shifted by yOff.
+    // Templated so the sprite's (non-virtual) draw methods resolve to the sprite,
+    // not the display. Caller clears the sprite first. Used by the screenshot path.
+    template<typename G>
+    void renderInto(G *tgt, int16_t yOff) {
+        if (!tgt) return;
+        for (int i = 0; i < _n; i++) _drawKeyTo(tgt, i, false, yOff);
+    }
+
+    // Topmost screen Y the keyboard occupies (for the screenshot compositor).
+    int16_t screenshotTop() const { return PANCAKE_KB_Y; }
+
     // Poll for a key tap. Returns true when a key was pressed.
-    // ch  = character (0 if special-only key)
-    // sp  = PancakeSpecial code (PKEY_NONE if regular char)
     bool poll(char &ch, uint8_t &sp) {
         ch = 0; sp = PKEY_NONE;
         if (!_touch) return false;
 
-        // Clear an expired momentary highlight without blocking, so rapid taps
-        // aren't throttled by a delay() the way the old flash-then-repaint was.
+        // Clear an expired momentary highlight without blocking (fast taps).
         if (_pressedKey >= 0 && (millis() - _pressedAt) >= KB_PRESS_MS) {
-            _drawKey(_pressedKey, false);
+            _drawKeyTo(_tft, _pressedKey, false, 0);
             _pressedKey = -1;
         }
 
-        // Read the CURRENT touch directly. (Do not use isCurrentlyDown() —
-        // that returns _wasDown, which only isTouchDown() updates and nothing
-        // calls, so it was always false and no key ever registered.)
         PancakeTouchPoint tp;
         bool touched = _touch->getPoint(tp) && tp.valid;
-
-        if (!touched) {
-            _lastTouchDown = false;
-            return false;
-        }
+        if (!touched) { _lastTouchDown = false; return false; }
         if (_lastTouchDown) return false;  // only fire on new press
         _lastTouchDown = true;
 
@@ -125,17 +124,14 @@ public:
             if (tp.x >= k.x && tp.x < k.x + k.w &&
                 tp.y >= k.y && tp.y < k.y + k.h)
             {
-                // Clear any still-lit key from a previous fast tap, then flash
-                // this one. No delay() — the highlight is cleared by a later
-                // poll() once KB_PRESS_MS has elapsed.
-                if (_pressedKey >= 0 && _pressedKey != i) _drawKey(_pressedKey, false);
-                _drawKey(i, true);
+                if (_pressedKey >= 0 && _pressedKey != i) _drawKeyTo(_tft, _pressedKey, false, 0);
+                _drawKeyTo(_tft, i, true, 0);
                 _pressedKey = i;
                 _pressedAt  = millis();
 
                 if (k.code == PKEY_SHIFT) {
                     _shifted = !_shifted;
-                    redraw();            // full repaint clears the flash
+                    redraw();
                     _pressedKey = -1;
                     return false;
                 }
@@ -153,20 +149,19 @@ public:
 
 private:
     TFT_eSPI     *_tft   = nullptr;
-    FT6336Touch  *_touch = nullptr;
+    PancakeTouch *_touch = nullptr;
     static const int MAX_KEYS = 70;
     PKey  _keys[MAX_KEYS];
     int   _n = 0;
     bool  _shifted = false;
     bool  _lastTouchDown = false;
-    int      _pressedKey = -1;   // key currently flashed (-1 = none)
-    uint32_t _pressedAt  = 0;    // millis() when it was pressed
+    int      _pressedKey = -1;
+    uint32_t _pressedAt  = 0;
 
     void _add(char ch, uint8_t code, int16_t x, int16_t y, int16_t w, int16_t h) {
         if (_n >= MAX_KEYS) return;
         _keys[_n++] = {ch, code, x, y, w, h, 0};
     }
-    // Key with a shift alternate char (e.g. '-' / '=').
     void _addS(char ch, char shiftedCh, int16_t x, int16_t y, int16_t w, int16_t h) {
         if (_n >= MAX_KEYS) return;
         _keys[_n++] = {ch, PKEY_NONE, x, y, w, h, shiftedCh};
@@ -178,11 +173,15 @@ private:
         const int y0 = PANCAKE_KB_Y + 4;   // 4 px top padding
         const int rh = PANCAKE_KB_ROW_H;
         const int m  = PANCAKE_KB_MARGIN;
+        // Fixed widths scale with screen width so the same layout fits 320 & 240.
+        const int wDel = W * 50 / 320;
+        const int wE   = W * 62 / 320;
+        const int wNav = W * 40 / 320;
+        const int wBk  = W * 44 / 320;
 
         // Row 0: 1 2 3 4 5 6 7 8 9 0  [-/=]  DEL(wide)
         {
             const char *r = "1234567890";
-            int wDel = 50;                               // big DEL
             int w = (W - wDel - 12*m) / 11;              // 10 digits + 1 combined key
             int y = y0;
             int x = m;
@@ -203,17 +202,13 @@ private:
         {
             const char *r = "asdfghjkl";
             int n  = 9;
-            int wE = 62;
             int w  = (W - (n+2)*m - wE) / n;
             int y  = y0 + 2*rh;
             int x  = m;
             for (int i = 0; i < n; i++) { _add(r[i], PKEY_NONE, x, y, w, rh-m); x += w+m; }
             _add(0, PKEY_ENTER, x, y, W-x-1, rh-m);
         }
-        // Right-aligned nav column, shared by rows 3 & 4:
-        //   row 4: ... SCR  <   DN   >
-        //   row 3: ...      (SHIFT above >, UP above DN)
-        const int wNav = 40;
+        // Right-aligned nav column, shared by rows 3 & 4.
         const int gtX  = W - wNav - 1;          // '>'   (rightmost)
         const int dnX  = gtX  - (wNav + m);     // 'DN'  (.)
         const int ltX  = dnX  - (wNav + m);     // '<'   (,)
@@ -223,7 +218,7 @@ private:
         {
             const char *r = "zxcvbnm";
             int n = 7;
-            int w = 30;                          // fixed so letters end before UP
+            int w = (dnX - 8*m) / 7;              // fill up to the UP key (fits 320 & 240)
             int y = y0 + 3*rh;
             int x = m;
             for (int i = 0; i < n; i++) { _add(r[i], PKEY_NONE, x, y, w, rh-m); x += w+m; }
@@ -233,10 +228,9 @@ private:
         // Row 4: `(back)  SPACE  SCR  <  DN  >
         {
             int y   = y0 + 4*rh;
-            int wBk = 44;
             _add('`', PKEY_BACKTICK, m, y, wBk, rh-m);
             int spX = m + wBk + m;
-            int spW = scrX - m - spX;                      // SPACE fills up to SCR
+            int spW = scrX - m - spX;
             _add(' ', PKEY_SPACE,     spX,  y, spW,  rh-m);
             _add('p', PKEY_SCREENSHOT, scrX, y, wNav, rh-m); // SCR (cyan; emits 'p')
             _add(',', PKEY_COMMA,     ltX,  y, wNav, rh-m); // <
@@ -245,28 +239,32 @@ private:
         }
     }
 
-    void _drawKey(int i, bool pressed) {
+    // Draw key i into target g (screen or sprite), with y shifted by yOff.
+    // Templated so sprite targets call the sprite's own (non-virtual) methods.
+    template<typename G>
+    void _drawKeyTo(G *g, int i, bool pressed, int16_t yOff) {
         PKey &k = _keys[i];
+        int16_t ky = k.y + yOff;
         int sc = kbShortcutClass(k.ch, k.code);
         uint16_t fill   = pressed ? KB_KEY_PRS : KB_KEY_NRM;
         uint16_t textcol= pressed ? KB_TEXT
                         : (k.code == PKEY_SCREENSHOT ? KB_CYAN
                         : (sc == 2 ? KB_RED : (sc == 1 ? KB_GREEN : KB_TEXT)));
 
-        _tft->fillRect(k.x, k.y, k.w, k.h, fill);
-        _tft->drawRect(k.x, k.y, k.w, k.h, KB_BORDER);
+        g->fillRect(k.x, ky, k.w, k.h, fill);
+        g->drawRect(k.x, ky, k.w, k.h, KB_BORDER);
 
         char label[8];
         _label(k, label);
 
-        _tft->setTextColor(textcol, fill);
-        _tft->setTextSize(1);
-        _tft->setTextFont(2);  // 16pt
+        g->setTextColor(textcol, fill);
+        g->setTextSize(1);
+        g->setTextFont(2);  // 16pt
 
-        int tw = _tft->textWidth(label);
-        int th = _tft->fontHeight();
-        _tft->setCursor(k.x + (k.w - tw)/2, k.y + (k.h - th)/2);
-        _tft->print(label);
+        int tw = g->textWidth(label);
+        int th = g->fontHeight();
+        g->setCursor(k.x + (k.w - tw)/2, ky + (k.h - th)/2);
+        g->print(label);
     }
 
     void _label(const PKey &k, char *out) {

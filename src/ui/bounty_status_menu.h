@@ -22,7 +22,7 @@ private:
     static bool keyWasPressed;
     
     // Layout constants (match boar_bros_menu pattern - no header)
-#ifdef PORKCHOP_PANCAKE
+#if defined(PORKCHOP_PANCAKE) && !defined(PORKCHOP_MARAUDER_V8)
     static const uint8_t VISIBLE_ITEMS = 11;  // taller Pancake canvas
 #else
     static const uint8_t VISIBLE_ITEMS = 6;  // 6 items, full canvas

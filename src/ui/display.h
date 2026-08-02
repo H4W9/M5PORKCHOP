@@ -71,6 +71,7 @@ static const uint16_t REAL_FRUIT_OUTLINE = 0x7882; // dark red (outline)
 static const uint16_t REAL_CLOUD_FAIR    = 0x867D; // sky blue (nice weather)
 static const uint16_t REAL_CLOUD_STORM   = 0x8410; // grey (stormy)
 static const uint16_t REAL_STAR          = 0xFEA0; // warm yellow-orange starlight
+static const uint16_t REAL_DIRT          = 0x9367; // dusty light-brown (kicked-up dirt)
 
 // Dynamic color getters (use these instead of macros)
 uint16_t getColorFG();
@@ -162,8 +163,21 @@ public:
     // Screenshot
     static bool takeScreenshot();     // Save screen to SD card, returns success
     static bool isSnapping() { return snapping; }  // True during screenshot save
-    
+
+    // Screen shake effect (captures, attack impacts). Applied as a jitter offset
+    // to the sprite pushes in pushAll(); decays over the duration.
+    static void triggerScreenShake(uint8_t intensity = 3, uint16_t durationMs = 200);
+    static bool isShaking();
+    static float getShakeDecay();      // 1.0 at start -> 0.0 at end
+    static uint8_t getShakeIntensity();
+
 private:
+    // Screen shake state
+    static bool screenShakeActive;
+    static uint32_t screenShakeStart;
+    static uint16_t screenShakeDuration;
+    static uint8_t screenShakeIntensity;
+
     static M5Canvas* topBar;
     static M5Canvas* mainCanvas;
     static M5Canvas* bottomBar;
