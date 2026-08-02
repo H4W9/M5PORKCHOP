@@ -34,6 +34,13 @@ uint32_t Avatar::pawScratchStart = 0;
 bool     Avatar::tailWiggleActive = false;
 uint32_t Avatar::tailWiggleStart = 0;
 Avatar::SparkleParticle Avatar::sparkles[Avatar::MAX_SPARKLES] = {};
+WaveMode Avatar::waveMode = WaveMode::NONE;
+uint32_t Avatar::waveBurstStart = 0;
+uint32_t Avatar::waveBurstEnd = 0;
+uint8_t  Avatar::waveIntensity = 3;
+// Tree shakes when an OUTGOING (deauth) wave ring sweeps over it.
+static bool     waveTreeShaking = false;
+static uint32_t waveTreeShakeStart = 0;
 
 // Walk transition state
 bool Avatar::transitioning = false;
@@ -114,6 +121,29 @@ static TrailParticle trailParticles[TRAIL_COUNT] = {};
 static uint32_t lastTrailSpawn = 0;
 static uint32_t lastTrailUpdate = 0;
 static int trailSpawnIdx = 0;
+
+// Fat-pixel helpers — defined here (before any drawer uses them). Font scale 3.
+static constexpr int16_t PX = 3;
+static inline int16_t snapPx(int16_t v) {
+    return (v >= 0) ? (v / PX) * PX : ((v - 2) / PX) * PX;
+}
+// Bresenham line on the PX grid — stamps PX*PX blocks.
+static void fatLine(M5Canvas& canvas, int16_t x1, int16_t y1,
+                    int16_t x2, int16_t y2, uint16_t color) {
+    int gx1 = x1 / PX, gy1 = y1 / PX;
+    int gx2 = x2 / PX, gy2 = y2 / PX;
+    int dx = abs(gx2 - gx1), dy = abs(gy2 - gy1);
+    int sx = (gx1 < gx2) ? 1 : -1, sy = (gy1 < gy2) ? 1 : -1;
+    int err = dx - dy;
+    while (true) {
+        canvas.fillRect(gx1 * PX, gy1 * PX, PX, PX, color);
+        if (gx1 == gx2 && gy1 == gy2) break;
+        int e2 = 2 * err;
+        if (e2 > -dy) { err -= dy; gx1 += sx; }
+        if (e2 < dx)  { err += dx; gy1 += sy; }
+    }
+}
+
 // Internal state for looking direction
 static bool facingRight = true;  // Default: pig looks right
 static uint32_t lastFlipTime = 0;
@@ -378,6 +408,129 @@ void Avatar::updateAndDrawSparkles(M5Canvas& canvas) {
         if (sparkles[i].life > 6) canvas.fillRect(sparkles[i].x, sparkles[i].y, 2, 2, fg);
         else                      canvas.drawPixel(sparkles[i].x, sparkles[i].y, fg);
     }
+}
+
+// ---- Radio-activity wave ripples (stage 4) ------------------------------------
+WaveMode Avatar::getWaveMode() { return waveMode; }
+
+void Avatar::waveRipple(WaveMode mode, uint8_t intensity) {
+    if (mode == WaveMode::NONE) { waveMode = WaveMode::NONE; return; }
+    uint32_t now = millis();
+    // OUTGOING priority: don't let INCOMING override an active OUTGOING burst
+    if (mode == WaveMode::INCOMING && waveMode == WaveMode::OUTGOING && now < waveBurstEnd) return;
+    bool alreadyActive = (waveMode != WaveMode::NONE && now < waveBurstEnd);
+    waveMode = mode;
+    waveBurstEnd = now + 4000;
+    if (!alreadyActive) waveBurstStart = now;
+    waveIntensity = intensity;
+}
+
+// Fat-pixel midpoint circle ring, clipped to the canvas.
+static void drawCircleRing(M5Canvas& canvas, int16_t cx, int16_t cy, int16_t r,
+                           uint16_t color, int16_t maxPxX, int16_t maxPxY) {
+    int16_t gr = r / PX;
+    if (gr < 1) return;
+    cx = snapPx(cx); cy = snapPx(cy);
+    int16_t gx = gr, gy = 0, d = 1 - gr;
+    while (gx >= gy) {
+        const int16_t ox[8] = { gx, (int16_t)-gx,  gx, (int16_t)-gx,  gy, (int16_t)-gy,  gy, (int16_t)-gy };
+        const int16_t oy[8] = { gy,  gy, (int16_t)-gy, (int16_t)-gy,  gx,  gx, (int16_t)-gx, (int16_t)-gx };
+        for (uint8_t p = 0; p < 8; p++) {
+            int16_t px = cx + ox[p] * PX;
+            int16_t py = cy + oy[p] * PX;
+            if (px < 0 || px > maxPxX || py < 0 || py > maxPxY) continue;
+            canvas.fillRect(px, py, PX, PX, color);
+        }
+        gy++;
+        if (d < 0) d += 2 * gy + 1; else { gx--; d += 2 * (gy - gx) + 1; }
+    }
+}
+
+void Avatar::drawWaveRipples(M5Canvas& canvas, bool faceRight, int startX, int startY) {
+    if (waveMode == WaveMode::NONE) return;
+    uint32_t now = millis();
+
+    // Gradual fade: after burst ends, suppress young rings over one cycle
+    const uint16_t FADE_MS = 3600;
+    float minProgress = 0.0f;
+    if (now >= waveBurstEnd) {
+        uint32_t fadeElapsed = now - waveBurstEnd;
+        if (fadeElapsed >= FADE_MS) { waveMode = WaveMode::NONE; return; }
+        minProgress = (float)fadeElapsed / (float)FADE_MS * 0.80f;
+    }
+    uint16_t color = getDrawColor();
+    const bool outgoing = (waveMode == WaveMode::OUTGOING);
+
+    int waveCX = faceRight ? (startX + 85) : (startX + 23);   // nose tip
+    int waveCY = startY + 31;
+
+    const uint8_t  COUNT    = outgoing ? 5 : waveIntensity;
+    const uint16_t CYCLE_MS = 3600;
+    const int16_t  R_MIN    = 0;
+    const int16_t  R_MAX    = 130;
+    const int16_t  MAX_PX_X = DISPLAY_W - PX;
+    const int16_t  MAX_PX_Y = MAIN_H - PX;
+    const int16_t  GRID_STEPS = (R_MAX - R_MIN) / PX;
+    uint32_t elapsed = now - waveBurstStart;
+
+    // Tree screen X for the deauth-wave shake check (screen-relative wrap)
+    const int16_t WRAP_HI = DISPLAY_W + 20, WRAP_LO = -80, WRAP_SPAN = WRAP_HI - WRAP_LO;
+
+    for (uint8_t i = 0; i < COUNT; i++) {
+        uint32_t phaseOffset = i * (CYCLE_MS / COUNT);
+        uint32_t phase = (elapsed + phaseOffset) % CYCLE_MS;
+        float progress = (float)phase / (float)CYCLE_MS;
+        if (progress < minProgress) continue;
+        if (progress > 0.80f) continue;
+        float t = progress / 0.80f;
+
+        int16_t gridStep = (int16_t)(t * GRID_STEPS);
+        int16_t rRaw = R_MIN + gridStep * PX;
+        int16_t r = outgoing ? snapPx(rRaw) : snapPx(R_MIN + R_MAX - rRaw);
+        bool earlyLife = (t < 0.5f);
+
+        drawCircleRing(canvas, waveCX, waveCY, r, color, MAX_PX_X, MAX_PX_Y);
+        if (earlyLife) drawCircleRing(canvas, waveCX, waveCY, r + PX, color, MAX_PX_X, MAX_PX_Y);
+
+        // OUTGOING ring sweeping over the tree -> shake it
+        if (outgoing && !waveTreeShaking &&
+            (treePhase == TreePhase::ALIVE || treePhase == TreePhase::GROWING)) {
+            int16_t tbx = treeTrunk.baseX + treeScrollOffset;
+            while (tbx > WRAP_HI) tbx -= WRAP_SPAN;
+            while (tbx < WRAP_LO) tbx += WRAP_SPAN;
+            int32_t dx = tbx - waveCX, dy = 106 - waveCY;
+            int32_t dist2 = dx * dx + dy * dy;
+            int32_t rOuter = r + treeTrunk.crownRadius;
+            int32_t rInner = r - treeTrunk.crownRadius; if (rInner < 0) rInner = 0;
+            if (dist2 <= rOuter * rOuter && dist2 >= rInner * rInner) {
+                waveTreeShaking = true; waveTreeShakeStart = now;
+            }
+        }
+    }
+}
+
+bool Avatar::checkBirdWaveCollision(int16_t bx, int16_t by) {
+    if (waveMode != WaveMode::OUTGOING) return false;
+    uint32_t now = millis();
+    if (now >= waveBurstEnd) return false;
+    int waveCX = facingRight ? (currentX + 85) : (currentX + 23);
+    int waveCY = 40 + 31;  // nominal startY=40
+    uint32_t elapsed = now - waveBurstStart;
+    const uint16_t CYCLE_MS = 3600;
+    const int16_t R_MAX = 130;
+    const uint8_t COUNT = 5;
+    int32_t dx = (int32_t)bx - waveCX, dy = (int32_t)by - waveCY;
+    int32_t dist2 = dx * dx + dy * dy;
+    for (uint8_t i = 0; i < COUNT; i++) {
+        uint32_t phaseOffset = i * (CYCLE_MS / COUNT);
+        uint32_t phase = (elapsed + phaseOffset) % CYCLE_MS;
+        float progress = (float)phase / (float)CYCLE_MS;
+        if (progress > 0.80f) continue;
+        int16_t r = (int16_t)((progress / 0.80f) * R_MAX);
+        int32_t rOuter = r + 4, rInner = r - 4; if (rInner < 0) rInner = 0;
+        if (dist2 <= rOuter * rOuter && dist2 >= rInner * rInner) return true;
+    }
+    return false;
 }
 
 void Avatar::draw(M5Canvas& canvas) {
@@ -701,6 +854,9 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
     if (treeColliding) startX += ((now / 50) % 2 == 0) ? PX : -PX;  // bonk into trunk
     int startY = 40 + shakeY;  // pig feet align with the grass ground (baseY=106)
     int lineHeight = 22;
+
+    // Radio-activity wave ripples behind the pig (scan = incoming, deauth = outgoing)
+    drawWaveRipples(canvas, faceRight, startX, startY);
     
     for (uint8_t i = 0; i < lines; i++) {
         // Handle body line (i=2) for dynamic tail
@@ -1279,30 +1435,6 @@ static constexpr uint8_t FRUIT_SPLASH_COUNT = 8;
 static FruitSplash fruitSplashes[FRUIT_SPLASH_COUNT] = {{0}};
 static uint8_t fruitSplashIdx = 0;
 
-// Fat pixel size = font scale factor (text size 3 = 3x3 blocks)
-static constexpr int16_t PX = 3;
-
-static inline int16_t snapPx(int16_t v) {
-    return (v >= 0) ? (v / PX) * PX : ((v - 2) / PX) * PX;
-}
-
-// Bresenham line on PX grid — stamps PX*PX blocks
-static void fatLine(M5Canvas& canvas, int16_t x1, int16_t y1,
-                    int16_t x2, int16_t y2, uint16_t color) {
-    int gx1 = x1 / PX, gy1 = y1 / PX;
-    int gx2 = x2 / PX, gy2 = y2 / PX;
-    int dx = abs(gx2 - gx1), dy = abs(gy2 - gy1);
-    int sx = (gx1 < gx2) ? 1 : -1, sy = (gy1 < gy2) ? 1 : -1;
-    int err = dx - dy;
-    while (true) {
-        canvas.fillRect(gx1 * PX, gy1 * PX, PX, PX, color);
-        if (gx1 == gx2 && gy1 == gy2) break;
-        int e2 = 2 * err;
-        if (e2 > -dy) { err -= dy; gx1 += sx; }
-        if (e2 < dx)  { err += dx; gy1 += sy; }
-    }
-}
-
 static uint32_t treeLCG(uint32_t& s) {
     s = s * 1664525u + 1013904223u;
     return s;
@@ -1683,6 +1815,15 @@ void Avatar::drawTree(M5Canvas& canvas) {
         if (pigR > treeLeft && pigL < treeRight) {
             treeColliding = true;
             treeCollisionShake = ((millis() / 33) % 2 == 0) ? PX : -PX;
+        }
+    }
+    // Deauth wave ring swept over the tree -> shake it for a short window.
+    if (waveTreeShaking) {
+        if (millis() - waveTreeShakeStart < 600) {
+            treeColliding = true;
+            treeCollisionShake = ((millis() / 33) % 2 == 0) ? PX : -PX;
+        } else {
+            waveTreeShaking = false;
         }
     }
 

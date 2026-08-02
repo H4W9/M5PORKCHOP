@@ -463,9 +463,10 @@ void OinkMode::stop() {
     deauthing = false;
     scanning = false;
     
-    // Stop grass animation and the fruit tree
+    // Stop grass animation, the fruit tree, and wave ripples
     Avatar::setGrassMoving(false);
     Avatar::hideTree();
+    Avatar::waveRipple(WaveMode::NONE);
 
     // Clear our callbacks (NetworkRecon keeps running)
     NetworkRecon::setPacketCallback(nullptr);
@@ -792,6 +793,8 @@ void OinkMode::update() {
     
     // Sync grass animation with channel hopping state
     Avatar::setGrassMoving(channelHopping);
+    // Incoming (converging) wave ripples while scanning/hopping for targets
+    if (channelHopping) Avatar::waveRipple(WaveMode::INCOMING);
     
     // Auto-attack state machine (like M5Gotchi)
     switch (autoState) {
@@ -1158,7 +1161,9 @@ void OinkMode::update() {
                         sendDisassocFrame(targetBssidLocal, broadcast, 8);  // Some devices respond to disassoc only
                         deauthCount++;
                     }
-                    
+
+                    // Radiate an OUTGOING wave burst from the pig's nose on deauth
+                    Avatar::waveRipple(WaveMode::OUTGOING);
                     lastDeauthTime = now;
                 }
                 

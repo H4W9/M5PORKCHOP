@@ -151,12 +151,17 @@ jobs:
             TAG="v${VER}"
           fi
           echo "Releasing tag: $TAG"
-          # Attach Pancake always; attach V8 bin + elf if the build produced them.
-          ASSETS="dl/porkchop_pancake.bin dl/firmware.elf"
-          [ -f dl_v8/porkchop_v8.bin ] && ASSETS="$ASSETS dl_v8/porkchop_v8.bin"
-          [ -f dl_v8/firmware.elf ]    && ASSETS="$ASSETS dl_v8/firmware.elf#porkchop_v8.elf"
+          # Refresh the release, then upload assets in a SEPARATE step. Uploading
+          # assets inline with `gh release create` can 404 (the release isn't fully
+          # propagated when the asset upload fires); a distinct `gh release upload
+          # --clobber` is reliable and also overwrites any stale assets.
           gh release delete "$TAG" --yes || true
-          gh release create "$TAG" $ASSETS \
+          gh release create "$TAG" \
             --title "$TAG" \
             --notes "Automated build of Porkchop Pancake + Marauder V8 $TAG." \
             --target "${{ github.sha }}"
+          # Attach Pancake always; V8 bin + elf only if that build produced them.
+          # if/then avoids `[ -f ] &&` tripping `set -e` when the file is absent.
+          gh release upload "$TAG" dl/porkchop_pancake.bin dl/firmware.elf --clobber
+          if [ -f dl_v8/porkchop_v8.bin ]; then gh release upload "$TAG" dl_v8/porkchop_v8.bin --clobber; fi
+          if [ -f dl_v8/firmware.elf ];    then gh release upload "$TAG" "dl_v8/firmware.elf#porkchop_v8.elf" --clobber; fi

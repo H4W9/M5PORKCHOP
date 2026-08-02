@@ -20,6 +20,13 @@ enum class TreePhase : uint8_t {
     COLLAPSING    // Reverse animation
 };
 
+// Radio-activity wave ripples behind the pig's nose.
+enum class WaveMode : uint8_t {
+    NONE,      // idle / cooldown
+    INCOMING,  // converging toward nose (scanning/sniffing)
+    OUTGOING   // radiating from nose (deauth/sending)
+};
+
 class Avatar {
 public:
     static void init();
@@ -48,6 +55,11 @@ public:
     static void triggerSparkles(uint8_t count = 6);
     static void attackHop();    // Multi-hop pounce (capture/deauth)
     static bool isAttackHopping();
+
+    // Radio-activity wave ripples (INCOMING=scan, OUTGOING=deauth)
+    static void waveRipple(WaveMode mode, uint8_t intensity = 3);
+    static WaveMode getWaveMode();
+    static bool checkBirdWaveCollision(int16_t bx, int16_t by);  // used by bird system
 
     // Direction control
     static void setFacingLeft();
@@ -188,6 +200,13 @@ private:
     static constexpr uint8_t MAX_SPARKLES = 8;
     static SparkleParticle sparkles[MAX_SPARKLES];
     static void updateAndDrawSparkles(M5Canvas& canvas);
+
+    // Wave ripple state
+    static WaveMode waveMode;
+    static uint32_t waveBurstStart;
+    static uint32_t waveBurstEnd;
+    static uint8_t  waveIntensity;
+    static void drawWaveRipples(M5Canvas& canvas, bool faceRight, int startX, int startY);
     
     // Walk transition animation
     static bool transitioning;
