@@ -1156,6 +1156,7 @@ void SettingsMenu::handleTextInput() {
             if (isPersonalitySetting(sid)) dirtyPersonality = true;
             else dirtyConfig = true;
         }
+        SFX::play(SFX::CONFIRM);  // setting committed
         textEditing = false;
         textBuffer[0] = '\0'; textLen = 0;
         return;

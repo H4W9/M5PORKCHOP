@@ -74,11 +74,20 @@
 //   Wire GPIO -> buzzer(+) -> buzzer(-) -> GND (optional 100ohm in series).
 //   GPIO25 is free, non-strapping, and broken out; change here if needed
 //   (GPIO15 or GPIO22 are equally safe alternates).
-// V8: no buzzer hardware -> -1 keeps the speaker a silent stub.
+//
+//   >>> No buzzer fitted? Comment out PANCAKE_BUZZER_ENABLED below and the
+//       speaker falls back to a silent stub (all SFX become no-ops). <<<
+//
+// V8: no buzzer hardware -> always silent.
 #ifdef PORKCHOP_MARAUDER_V8
   #define PANCAKE_BUZZER_PIN  -1
 #else
-  #define PANCAKE_BUZZER_PIN  25
+  #define PANCAKE_BUZZER_ENABLED       // <-- comment out if no buzzer wired
+  #ifdef PANCAKE_BUZZER_ENABLED
+    #define PANCAKE_BUZZER_PIN  25
+  #else
+    #define PANCAKE_BUZZER_PIN  -1
+  #endif
 #endif
 
 // ---- Display geometry --------------------------------------
