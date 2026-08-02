@@ -52,7 +52,11 @@ enum Event {
     
     // === SPECIAL ===
     SIREN,              // police siren effect (replaces flashSiren audio)
-    YOU_DIED            // Dark Souls style death sound
+    YOU_DIED,           // Dark Souls style death sound
+    // === WEATHER / BIRDS / TREE ===
+    BIRD_HIT,           // bird zapped by a deauth wave
+    BIRD_IMPACT,        // downed bird hits the ground
+    OINK_GRUNT          // pig bumps into the tree
 };
 
 // Initialize audio system (call once at startup)

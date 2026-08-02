@@ -6,6 +6,7 @@
 #include "mood.h"
 #include "../ui/display.h"
 #include "../core/xp.h"
+#include "../audio/sfx.h"
 #include <esp_random.h>
 
 namespace Weather {
@@ -292,6 +293,7 @@ static void updateBirds(uint32_t now) {
             if (Avatar::checkBirdWaveCollision((int16_t)b.x, drawY)) {
                 b.falling = true; b.fallVy = -1.5f; b.fallX = b.x;
                 b.fallY = (float)drawY; b.fallStartY = (float)drawY;
+                SFX::play(SFX::BIRD_HIT);   // electric zap
                 if (whistlingBird < 0) whistlingBird = (int8_t)i;
                 int spawned = 0;
                 for (int s = 0; s < 6 && spawned < 3; s++) {
@@ -308,8 +310,16 @@ static void updateBirds(uint32_t now) {
             }
         } else {
             b.fallVy += 0.4f; b.fallY += b.fallVy; b.fallX += (float)b.vx * 0.5f;
+            // Bomb whistle: descending pitch tracks the fall (1200Hz -> 200Hz)
+            if (whistlingBird == i && b.fallY < (float)GROUND_Y) {
+                float range = (float)GROUND_Y - b.fallStartY;
+                float prog = (range > 0.0f) ? (b.fallY - b.fallStartY) / range : 1.0f;
+                if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
+                SFX::tone((uint16_t)(1200.0f - prog * 1000.0f), 60);
+            }
             if (b.fallY > (float)GROUND_Y) {
                 if (whistlingBird == i) whistlingBird = -1;
+                SFX::play(SFX::BIRD_IMPACT);   // ground thud
                 for (int e = 0; e < 2; e++) if (!explosions[e].active) {
                     explosions[e].x = b.fallX; explosions[e].y = (float)GROUND_Y;
                     explosions[e].radius = 0; explosions[e].maxRadius = (uint8_t)random(9, 13);

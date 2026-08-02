@@ -3,6 +3,7 @@
 #include "avatar.h"
 #include "weather.h"
 #include "../ui/display.h"
+#include "../audio/sfx.h"
 #include <time.h>
 
 // Static members
@@ -147,6 +148,7 @@ static void fatLine(M5Canvas& canvas, int16_t x1, int16_t y1,
 // Tree-pig collision state (pig/deauth-wave bumps the tree -> both shake).
 // Declared here (before drawFrame/drawGrass which read it; set in drawTree).
 static bool   treeColliding = false;
+static bool   wasTreeColliding = false;  // edge-detect for the bump grunt SFX
 static int8_t treeCollisionShake = 0;  // rapid jitter applied to tree X
 
 // Internal state for looking direction
@@ -454,6 +456,13 @@ static void drawCircleRing(M5Canvas& canvas, int16_t cx, int16_t cy, int16_t r,
 void Avatar::drawWaveRipples(M5Canvas& canvas, bool faceRight, int startX, int startY) {
     if (waveMode == WaveMode::NONE) return;
     uint32_t now = millis();
+
+    // Geiger-counter clicks while the burst is actively radiating
+    static uint32_t nextGeigerClick = 0;
+    if (now < waveBurstEnd && now >= nextGeigerClick) {
+        SFX::tone((uint16_t)random(800, 1600), random(3, 8));
+        nextGeigerClick = now + random(80, 300);
+    }
 
     // Gradual fade: after burst ends, suppress young rings over one cycle
     const uint16_t FADE_MS = 3600;
@@ -1834,6 +1843,10 @@ void Avatar::drawTree(M5Canvas& canvas) {
             waveTreeShaking = false;
         }
     }
+
+    // Grunt on the first frame of a bump (edge detect).
+    if (treeColliding && !wasTreeColliding) SFX::play(SFX::OINK_GRUNT);
+    wasTreeColliding = treeColliding;
 
     // Check if any dropping fruits are still active
     bool hasDropping = false;

@@ -89,6 +89,29 @@ static const Note SND_DEAUTH[] = {
     {0, 0, 0}
 };
 
+// Bird zapped by a deauth wave — descending electric zap
+static const Note SND_BIRD_HIT[] = {
+    {1400, 25, 0},
+    {900, 35, 0},
+    {600, 20, 0},
+    {0, 0, 0}
+};
+// Downed bird hits the ground — low thud
+static const Note SND_BIRD_IMPACT[] = {
+    {220, 60, 0},
+    {350, 25, 10},
+    {280, 20, 0},
+    {0, 0, 0}
+};
+// Pig bumps into the tree — guttural grunt
+static const Note SND_OINK_GRUNT[] = {
+    {420, 40, 0},     // guttural attack
+    {340, 35, 0},     // drop into rumble
+    {400, 20, 5},     // brief push up (vocal wobble)
+    {300, 40, 0},     // settle into chest tone
+    {0, 0, 0}
+};
+
 // PMKID: "Truffle found" - pig's ears perk up, quick ascending pair
 static const Note SND_PMKID[] = {
     {1000, 50, 15},
@@ -366,6 +389,15 @@ bool update() {
         switch (e) {
             case DEAUTH:
                 startSequence(SND_DEAUTH);
+                break;
+            case BIRD_HIT:
+                startSequence(SND_BIRD_HIT);
+                break;
+            case BIRD_IMPACT:
+                startSequence(SND_BIRD_IMPACT);
+                break;
+            case OINK_GRUNT:
+                startSequence(SND_OINK_GRUNT);
                 break;
             case HANDSHAKE:
                 startSequence(SND_HANDSHAKE);
