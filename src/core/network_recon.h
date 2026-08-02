@@ -164,6 +164,14 @@ int findNetworkIndex(const uint8_t* bssid);
 // ============================================================================
 
 /**
+ * @brief True if this build can tune to `channel`.
+ * 2.4 GHz (1-14) is always valid; 5 GHz (36-177) is valid on the
+ * dual-band Pancake/ESP32-C5. Used to guard channel-set/lock so 5 GHz
+ * targets aren't silently rejected during OINK attacks.
+ */
+bool isValidChannel(uint8_t channel);
+
+/**
  * @brief Lock to specific channel (for targeted operations)
  * Disables channel hopping until unlocked
  */

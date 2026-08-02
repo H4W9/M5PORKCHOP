@@ -1081,8 +1081,18 @@ int findNetworkIndex(const uint8_t* bssid) {
     return idx;
 }
 
+bool isValidChannel(uint8_t channel) {
+#ifdef PORKCHOP_PANCAKE
+    // Dual-band (ESP32-C5): 2.4 GHz 1-14 and 5 GHz 36-177. Reject the
+    // non-existent 15-35 gap; esp_wifi_set_channel validates the rest.
+    return (channel >= 1 && channel <= 14) || (channel >= 36 && channel <= 177);
+#else
+    return channel >= 1 && channel <= 14;  // 2.4 GHz only
+#endif
+}
+
 void lockChannel(uint8_t channel) {
-    if (channel < 1 || channel > 14) return;
+    if (!isValidChannel(channel)) return;
 
     lockedChannel = channel;
     currentChannel = channel;
@@ -1102,7 +1112,7 @@ bool isChannelLocked() {
 }
 
 void setChannel(uint8_t channel) {
-    if (channel < 1 || channel > 14) return;
+    if (!isValidChannel(channel)) return;
     currentChannel = channel;
     esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
 }

@@ -1221,7 +1221,8 @@ void Avatar::drawGrass(M5Canvas& canvas) {
         int tpx = snapPx((int16_t)trailParticles[i].x);
         int tpy = snapPx((int16_t)trailParticles[i].y);
         if (tpx < 0 || tpx >= DISPLAY_W) continue;
-        canvas.fillRect(tpx, tpy, PX, PX, color);
+        // Realistic theme: kicked-up dust is dusty brown, not grass-green.
+        canvas.fillRect(tpx, tpy, PX, PX, realActive() ? REAL_DIRT : color);
     }
 }
 

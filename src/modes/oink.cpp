@@ -1532,7 +1532,7 @@ void OinkMode::stopDeauth() {
 }
 
 void OinkMode::setChannel(uint8_t ch) {
-    if (ch < 1 || ch > 14) return;
+    if (!NetworkRecon::isValidChannel(ch)) return;  // allow 5 GHz targets on C5
     currentChannel = ch;
     // #region agent log - H1/H2 channel conflict
     Serial.printf("[DBG-H1H2] OINK setCh=%d reconCh=%d reconLocked=%d\n", ch, NetworkRecon::getCurrentChannel(), NetworkRecon::isChannelLocked() ? 1 : 0);
