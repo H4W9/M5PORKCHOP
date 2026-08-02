@@ -15,6 +15,7 @@ public:
     static void onHandshakeCaptured(const char* apName = nullptr);
     static void onPMKIDCaptured(const char* apName = nullptr);
     static void onNewNetwork(const char* apName = nullptr, int8_t rssi = 0, uint8_t channel = 0);
+    static void onBirdKill();  // pig downed a sky bird with a deauth wave
     static void setStatusMessage(const char* msg);  // For mode-specific info
     static void onMLPrediction(float confidence);
     static void onNoActivity(uint32_t seconds);

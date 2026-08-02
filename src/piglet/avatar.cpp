@@ -144,6 +144,11 @@ static void fatLine(M5Canvas& canvas, int16_t x1, int16_t y1,
     }
 }
 
+// Tree-pig collision state (pig/deauth-wave bumps the tree -> both shake).
+// Declared here (before drawFrame/drawGrass which read it; set in drawTree).
+static bool   treeColliding = false;
+static int8_t treeCollisionShake = 0;  // rapid jitter applied to tree X
+
 // Internal state for looking direction
 static bool facingRight = true;  // Default: pig looks right
 static uint32_t lastFlipTime = 0;
@@ -399,7 +404,7 @@ void Avatar::attackHop() {
 }
 
 void Avatar::updateAndDrawSparkles(M5Canvas& canvas) {
-    uint16_t fg = getColorFG();
+    uint16_t fg = realActive() ? REAL_STAR : getColorFG();  // warm yellow-orange in Realistic
     for (uint8_t i = 0; i < MAX_SPARKLES; i++) {
         if (sparkles[i].life == 0) continue;
         sparkles[i].x += sparkles[i].vx;
@@ -1408,10 +1413,6 @@ bool Avatar::treePendingShow = false;
 uint8_t Avatar::treePendingFruits = 0;
 uint32_t Avatar::treeAliveStart = 0;
 int16_t Avatar::treeScrollOffset = 0;
-
-// Tree-pig collision state (pig bumps into tree → both shake)
-static bool treeColliding = false;
-static int8_t treeCollisionShake = 0;  // rapid jitter applied to tree X
 
 // Dropping fruit system (individual fruit falls on deauth success)
 struct DroppingFruit {

@@ -1452,6 +1452,16 @@ void Mood::update() {
     maybeNotifyMoodTierUp(getLastEffectiveHappiness(), now);
 }
 
+void Mood::onBirdKill() {
+    // Pig downed a bird with a deauth wave — a small gleeful celebration.
+    happiness = min(happiness + 2, 100);
+    applyMomentumBoost(15);
+    lastActivityTime = millis();
+    isBoredState = false;
+    Avatar::triggerTailWiggle();
+    Display::triggerScreenShake(2, 150);
+}
+
 void Mood::onHandshakeCaptured(const char* apName) {
     happiness = min(happiness + 10, 100);  // Smaller permanent boost
     applyMomentumBoost(30);  // Big temporary excitement!

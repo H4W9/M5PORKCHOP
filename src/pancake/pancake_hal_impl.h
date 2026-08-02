@@ -365,7 +365,7 @@ static inline void pancakeLedWrite(uint8_t r, uint8_t g, uint8_t b) {
 }
 #else
 static inline void pancakeLedWrite(uint8_t r, uint8_t g, uint8_t b) {
-    neopixelWrite(PANCAKE_LED_PIN, r, g, b);
+    rgbLedWrite(PANCAKE_LED_PIN, r, g, b);  // rgbLedWrite replaces deprecated neopixelWrite
 }
 #endif
 

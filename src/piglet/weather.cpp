@@ -3,7 +3,9 @@
 
 #include "weather.h"
 #include "avatar.h"
+#include "mood.h"
 #include "../ui/display.h"
+#include "../core/xp.h"
 #include <esp_random.h>
 
 namespace Weather {
@@ -227,6 +229,168 @@ static void updateRain(uint32_t now);
 static void updateThunder(uint32_t now);
 static void updateWind(uint32_t now);
 
+// === BIRD SYSTEM ===
+// Birds drift across the sky; an OUTGOING (deauth) wave ring downs them, with
+// sparks, a ground explosion, splashes, and an XP reward. (Bird SFX omitted.)
+static constexpr int16_t BIRD_PX = 3;
+static inline int16_t birdSnap(int16_t v) {
+    return (v >= 0) ? (v / BIRD_PX) * BIRD_PX : ((v - 2) / BIRD_PX) * BIRD_PX;
+}
+struct SkyBird { float x; int8_t y; int8_t vx; uint8_t sinePhase; bool active, falling;
+                 float fallVy, fallX, fallY, fallStartY; };
+struct BirdSpark { float x, y, vx, vy; uint8_t life; };
+struct BirdExplosion { float x, y; uint8_t radius, maxRadius, life; bool active; };
+struct ImpactSplash { float x, y, vx, vy; uint8_t life; bool active; };
+static SkyBird birds[2];
+static BirdSpark sparks[6];
+static BirdExplosion explosions[2];
+static ImpactSplash impactSplashes[6];
+static int8_t whistlingBird = -1;
+static uint32_t lastBirdUpdate = 0;
+static uint32_t nextBirdSpawn = 0;
+static const int16_t GROUND_Y = 106;   // grass ground line (matches avatar)
+
+static void spawnBird() {
+    int slot = -1;
+    for (int i = 0; i < 2; i++) if (!birds[i].active) { slot = i; break; }
+    if (slot < 0) return;
+    SkyBird& b = birds[slot];
+    b.y = (int8_t)random(3, 15);
+    b.sinePhase = 0; b.active = true; b.falling = false;
+    bool goRight = random(0, 2) == 0;
+    b.vx = goRight ? (int8_t)random(1, 3) : (int8_t)random(-2, 0);
+    if (b.vx == 0) b.vx = 1;
+    b.x = goRight ? -20.0f : (float)(DISPLAY_W + 20);
+}
+
+static void updateBirds(uint32_t now) {
+    if (rainActive) {   // no birds in the rain
+        for (int i = 0; i < 2; i++) birds[i].active = false;
+        for (int i = 0; i < 6; i++) sparks[i].life = 0;
+        for (int i = 0; i < 2; i++) explosions[i].active = false;
+        for (int i = 0; i < 6; i++) impactSplashes[i].active = false;
+        whistlingBird = -1;
+        nextBirdSpawn = now + random(15000, 30001);
+        return;
+    }
+    if (now - lastBirdUpdate < 50) return;   // ~20fps tick
+    lastBirdUpdate = now;
+
+    if (now >= nextBirdSpawn) { spawnBird(); nextBirdSpawn = now + random(15000, 30001); }
+
+    for (int i = 0; i < 2; i++) {
+        if (!birds[i].active) continue;
+        SkyBird& b = birds[i];
+        if (!b.falling) {
+            b.x += (float)b.vx; b.sinePhase++;
+            if (b.x < -25.0f || b.x > (float)(DISPLAY_W + 25)) { b.active = false; continue; }
+            int16_t drawY = b.y + ((b.sinePhase & 0x08) ? 1 : 0);
+            if (Avatar::checkBirdWaveCollision((int16_t)b.x, drawY)) {
+                b.falling = true; b.fallVy = -1.5f; b.fallX = b.x;
+                b.fallY = (float)drawY; b.fallStartY = (float)drawY;
+                if (whistlingBird < 0) whistlingBird = (int8_t)i;
+                int spawned = 0;
+                for (int s = 0; s < 6 && spawned < 3; s++) {
+                    if (sparks[s].life == 0) {
+                        sparks[s].x = b.fallX; sparks[s].y = b.fallY;
+                        sparks[s].vx = (float)random(-20, 21) / 10.0f;
+                        sparks[s].vy = -1.0f - (float)random(0, 15) / 10.0f;
+                        sparks[s].life = random(10, 18); spawned++;
+                    }
+                }
+                uint8_t lvl = XP::getLevel(); if (lvl < 1) lvl = 1;
+                XP::addXP((uint16_t)(lvl * random(1, 4)));
+                Mood::onBirdKill();
+            }
+        } else {
+            b.fallVy += 0.4f; b.fallY += b.fallVy; b.fallX += (float)b.vx * 0.5f;
+            if (b.fallY > (float)GROUND_Y) {
+                if (whistlingBird == i) whistlingBird = -1;
+                for (int e = 0; e < 2; e++) if (!explosions[e].active) {
+                    explosions[e].x = b.fallX; explosions[e].y = (float)GROUND_Y;
+                    explosions[e].radius = 0; explosions[e].maxRadius = (uint8_t)random(9, 13);
+                    explosions[e].life = 12; explosions[e].active = true; break;
+                }
+                int splashed = 0;
+                for (int s = 0; s < 6 && splashed < 4; s++) if (!impactSplashes[s].active) {
+                    impactSplashes[s].x = b.fallX + (float)random(-6, 7);
+                    impactSplashes[s].y = (float)GROUND_Y;
+                    impactSplashes[s].vx = (float)random(-30, 31) / 10.0f;
+                    impactSplashes[s].vy = -1.0f - (float)random(0, 16) / 10.0f;
+                    impactSplashes[s].life = (uint8_t)random(12, 19);
+                    impactSplashes[s].active = true; splashed++;
+                }
+                b.active = false;
+            }
+        }
+    }
+    for (int s = 0; s < 6; s++) if (sparks[s].life) {
+        sparks[s].x += sparks[s].vx; sparks[s].y += sparks[s].vy; sparks[s].vy += 0.25f; sparks[s].life--;
+    }
+    for (int e = 0; e < 2; e++) if (explosions[e].active) {
+        if (explosions[e].radius < explosions[e].maxRadius) explosions[e].radius++;
+        else if (--explosions[e].life == 0) explosions[e].active = false;
+    }
+    for (int s = 0; s < 6; s++) if (impactSplashes[s].active) {
+        impactSplashes[s].x += impactSplashes[s].vx; impactSplashes[s].y += impactSplashes[s].vy;
+        impactSplashes[s].vy += 0.3f;
+        if (--impactSplashes[s].life == 0) impactSplashes[s].active = false;
+    }
+}
+
+void drawBirds(M5Canvas& canvas, uint16_t colorFG) {
+    uint16_t drawColor = isThunderFlashing() ? getColorBG() : colorFG;
+    // Realistic: explosions/sparks/splashes read as fire (orange).
+    uint16_t fire = isRealisticTheme() ? 0xFC20 : drawColor;
+    const int16_t W = DISPLAY_W, H = MAIN_H;
+
+    for (int i = 0; i < 2; i++) {
+        if (!birds[i].active) continue;
+        const SkyBird& b = birds[i];
+        if (!b.falling) {
+            int16_t bx = birdSnap((int16_t)b.x);
+            int16_t bodyY = birdSnap(b.y + ((b.sinePhase & 0x08) ? BIRD_PX : 0));
+            bool wingsUp = (b.sinePhase & 0x04) != 0;
+            int16_t wingY = wingsUp ? (bodyY - BIRD_PX) : (bodyY + BIRD_PX);
+            canvas.fillRect(bx, wingY, BIRD_PX, BIRD_PX, drawColor);
+            canvas.fillRect(bx + 2 * BIRD_PX, wingY, BIRD_PX, BIRD_PX, drawColor);
+            canvas.fillRect(bx + BIRD_PX, bodyY, BIRD_PX, BIRD_PX, drawColor);
+        } else {
+            int16_t fx = birdSnap((int16_t)b.fallX), fy = birdSnap((int16_t)b.fallY);
+            if (fy >= 0 && fy < H) {
+                canvas.fillRect(fx, fy, BIRD_PX, BIRD_PX, drawColor);
+                canvas.fillRect(fx + BIRD_PX, fy, BIRD_PX, BIRD_PX, drawColor);
+            }
+        }
+    }
+    for (int s = 0; s < 6; s++) {
+        if (sparks[s].life == 0) continue;
+        if (sparks[s].life < 4 && (sparks[s].life % 2 == 0)) continue;
+        int16_t sx = birdSnap((int16_t)sparks[s].x), sy = birdSnap((int16_t)sparks[s].y);
+        if (sx >= 0 && sx < W && sy >= 0 && sy < H) canvas.fillRect(sx, sy, BIRD_PX, BIRD_PX, fire);
+    }
+    for (int e = 0; e < 2; e++) {
+        if (!explosions[e].active) continue;
+        if (explosions[e].life < 4 && (explosions[e].life % 2 == 0)) continue;
+        int16_t cx = birdSnap((int16_t)explosions[e].x), cy = birdSnap((int16_t)explosions[e].y);
+        int16_t r = (int16_t)explosions[e].radius;
+        const int16_t pts[][2] = {
+            {0,(int16_t)(-r)},{0,r},{(int16_t)(-r),0},{r,0},
+            {(int16_t)(r*7/10),(int16_t)(-r*7/10)},{(int16_t)(-r*7/10),(int16_t)(-r*7/10)},
+            {(int16_t)(r*7/10),(int16_t)(r*7/10)},{(int16_t)(-r*7/10),(int16_t)(r*7/10)} };
+        for (int p = 0; p < 8; p++) {
+            int16_t px = birdSnap(cx + pts[p][0]), py = birdSnap(cy + pts[p][1]);
+            if (px >= 0 && px < W && py >= 0 && py < H) canvas.fillRect(px, py, BIRD_PX, BIRD_PX, fire);
+        }
+    }
+    for (int s = 0; s < 6; s++) {
+        if (!impactSplashes[s].active) continue;
+        if (impactSplashes[s].life < 4 && (impactSplashes[s].life % 2 == 0)) continue;
+        int16_t sx = birdSnap((int16_t)impactSplashes[s].x), sy = birdSnap((int16_t)impactSplashes[s].y);
+        if (sx >= 0 && sx < W && sy >= 0 && sy < H) canvas.fillRect(sx, sy, BIRD_PX, BIRD_PX, fire);
+    }
+}
+
 // === ANIMATION UPDATES ===
 void update() {
     uint32_t now = millis();
@@ -246,6 +410,9 @@ void update() {
     
     // Update wind gusts (periodic)
     updateWind(now);
+
+    // Update sky birds (drift + deauth-wave takedown physics)
+    updateBirds(now);
 }
 
 static void updateClouds(uint32_t now) {
@@ -420,7 +587,9 @@ void drawClouds(M5Canvas& canvas, uint16_t colorFG) {
 void draw(M5Canvas& canvas, uint16_t colorFG, uint16_t colorBG) {
     // During thunder flash, invert colors for rain/wind (matches sirloin)
     uint16_t drawColor = isThunderFlashing() ? colorBG : colorFG;
-    
+    // Realistic theme: rain reads as light blue (not thunder-flashing).
+    uint16_t rainColor = (isRealisticTheme() && !isThunderFlashing()) ? 0x5D1F : drawColor;
+
     // Draw rain
     if (rainActive) {
         for (int i = 0; i < RAIN_DROP_COUNT; i++) {
@@ -433,8 +602,8 @@ void draw(M5Canvas& canvas, uint16_t colorFG, uint16_t colorBG) {
             // Draw 6-pixel tall × 2-pixel wide raindrop (slightly taller for visibility)
             for (int dy = 0; dy < 6; dy++) {
                 if (y + dy < 88) {  // Clip 3px above grass (grass starts at Y=91)
-                    canvas.drawPixel(x, y + dy, drawColor);
-                    if (x + 1 < 240) canvas.drawPixel(x + 1, y + dy, drawColor);
+                    canvas.drawPixel(x, y + dy, rainColor);
+                    if (x + 1 < 240) canvas.drawPixel(x + 1, y + dy, rainColor);
                 }
             }
         }

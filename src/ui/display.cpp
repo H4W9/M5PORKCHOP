@@ -371,6 +371,7 @@ void Display::update() {
             Avatar::draw(*mainCanvas);
             // Draw clouds above stars/pig before rain
             Weather::drawClouds(*mainCanvas, getCloudColor());
+            Weather::drawBirds(*mainCanvas, COLOR_FG);
             // Draw weather effects (rain, wind particles) over avatar
             Weather::draw(*mainCanvas, COLOR_FG, COLOR_BG);
             // Draw mood bubble LAST so it's always on top
@@ -385,6 +386,7 @@ void Display::update() {
             Avatar::draw(*mainCanvas);
             // Draw clouds above stars/pig before rain
             Weather::drawClouds(*mainCanvas, getCloudColor());
+            Weather::drawBirds(*mainCanvas, COLOR_FG);
             // Draw weather effects (rain, wind particles) over avatar
             Weather::draw(*mainCanvas, COLOR_FG, COLOR_BG);
             // Draw mood bubble LAST so it's always on top
@@ -1572,7 +1574,7 @@ void Display::clearTopBarMessage() {
 #else
 #define LED_PIN 21   // M5Cardputer NeoPixel on GPIO 21
 static inline void pancakeLedWrite(uint8_t r, uint8_t g, uint8_t b) {
-    neopixelWrite(LED_PIN, r, g, b);
+    rgbLedWrite(LED_PIN, r, g, b);  // rgbLedWrite replaces deprecated neopixelWrite
 }
 #endif
 #define SIREN_COOLDOWN_MS 2000

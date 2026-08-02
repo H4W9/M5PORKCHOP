@@ -518,6 +518,7 @@ void BaconMode::draw(M5Canvas& canvas) {
     
     // Draw clouds above stars/pig before rain
     Weather::drawClouds(canvas, getCloudColor());
+    Weather::drawBirds(canvas, COLOR_FG);
 
     // Draw weather effects (rain, wind particles) over avatar
     Weather::draw(canvas, COLOR_FG, COLOR_BG);
