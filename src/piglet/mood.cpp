@@ -1457,11 +1457,11 @@ void Mood::onHandshakeCaptured(const char* apName) {
     applyMomentumBoost(30);  // Big temporary excitement!
     lastActivityTime = millis();
     
-    // Sniff animation - caught something big!
+    // Sniff + multi-hop pounce + tail wiggle + screen shake — caught something big!
     Avatar::sniff();
-    
-    // Cute jump celebration!
-    Avatar::cuteJump();
+    Avatar::attackHop();
+    Avatar::triggerTailWiggle();
+    Display::triggerScreenShake(4, 250);
     
     // Phase 2: Attack shake - strong shake for captures!
     Avatar::setAttackShake(true, true);
@@ -1543,11 +1543,11 @@ void Mood::onPMKIDCaptured(const char* apName) {
     applyMomentumBoost(40);  // Even more temporary excitement!
     lastActivityTime = millis();
     
-    // Sniff animation - stealthy capture!
+    // Sniff + multi-hop pounce + tail wiggle + screen shake — stealthy capture!
     Avatar::sniff();
-    
-    // Cute jump celebration!
-    Avatar::cuteJump();
+    Avatar::attackHop();
+    Avatar::triggerTailWiggle();
+    Display::triggerScreenShake(5, 300);
     
     // Phase 2: Attack shake - strong shake for captures!
     Avatar::setAttackShake(true, true);
@@ -1618,8 +1618,9 @@ void Mood::onNewNetwork(const char* apName, int8_t rssi, uint8_t channel) {
     
     // Audio feedback - soft blip for new network
     SFX::play(SFX::NETWORK_NEW);
-    
-    // Sniff animation - found a truffle!
+
+    // Perk up + sniff — found a truffle!
+    Avatar::perkUp();
     Avatar::sniff();
     
     // Award XP for network discovery
@@ -1785,6 +1786,8 @@ void Mood::onNoActivity(uint32_t seconds) {
     } else if (seconds > boredThreshold) {
         // Getting bored
         happiness = max(happiness - 1, -100);
+        // Occasional paw scratch when bored (30% chance)
+        if (random(0, 100) < 30) Avatar::pawScratch();
     }
 }
 

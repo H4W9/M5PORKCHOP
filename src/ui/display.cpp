@@ -1663,7 +1663,13 @@ void Display::showLevelUp(uint8_t oldLevel, uint8_t newLevel) {
     
     // Celebratory beep sequence - non-blocking
     SFX::play(SFX::LEVEL_UP);
-    
+
+    // Spin + jump + sparkles + tail wiggle celebration!
+    Avatar::spin();
+    Avatar::cuteJump();
+    Avatar::triggerSparkles(6);
+    Avatar::triggerTailWiggle();
+
     // Auto-dismiss after 2.5 seconds or on any key press
     uint32_t startTime = millis();
     while ((millis() - startTime) < 2500) {

@@ -16,6 +16,24 @@ int Avatar::moodIntensity = 0;  // Phase 8: -100 to 100
 // Cute jump state
 bool Avatar::jumpActive = false;
 uint32_t Avatar::jumpStartTime = 0;
+// Pig-animation state (stage 3)
+bool     Avatar::attackHopActive = false;
+uint32_t Avatar::attackHopStartTime = 0;
+uint8_t  Avatar::attackHopIndex = 0;
+uint8_t  Avatar::attackHopTotal = 0;
+int16_t  Avatar::attackHopOriginX = 0;
+int16_t  Avatar::attackHopTargets[5] = {0};
+bool     Avatar::spinActive = false;
+uint32_t Avatar::spinStart = 0;
+bool     Avatar::perkUpActive = false;
+uint32_t Avatar::perkUpStart = 0;
+bool     Avatar::flinchActive = false;
+uint32_t Avatar::flinchStart = 0;
+bool     Avatar::pawScratchActive = false;
+uint32_t Avatar::pawScratchStart = 0;
+bool     Avatar::tailWiggleActive = false;
+uint32_t Avatar::tailWiggleStart = 0;
+Avatar::SparkleParticle Avatar::sparkles[Avatar::MAX_SPARKLES] = {};
 
 // Walk transition state
 bool Avatar::transitioning = false;
@@ -290,6 +308,78 @@ void Avatar::cuteJump() {
     jumpStartTime = millis();
 }
 
+// ---- Upstream pig-animation triggers (stage 3) --------------------------------
+void Avatar::perkUp() {
+    if (attackHopActive || spinActive) return;
+    perkUpActive = true; perkUpStart = millis();
+}
+void Avatar::flinch() {
+    if (attackHopActive || spinActive) return;
+    flinchActive = true; flinchStart = millis();
+}
+void Avatar::spin() {
+    if (attackHopActive) return;
+    jumpActive = false;  // spin owns the Y arc
+    spinActive = true; spinStart = millis();
+}
+void Avatar::pawScratch() {
+    if (attackHopActive || spinActive || perkUpActive || transitioning) return;
+    pawScratchActive = true; pawScratchStart = millis();
+}
+void Avatar::triggerTailWiggle() {
+    tailWiggleActive = true; tailWiggleStart = millis();
+}
+void Avatar::triggerSparkles(uint8_t count) {
+    int cx = currentX + 40;  // rough pig centre
+    int cy = 50;
+    for (uint8_t i = 0; i < MAX_SPARKLES && count > 0; i++) {
+        if (sparkles[i].life == 0) {
+            sparkles[i].x = cx + random(-10, 11);
+            sparkles[i].y = cy + random(-10, 11);
+            sparkles[i].vx = random(-3, 4);
+            sparkles[i].vy = random(-4, 1);  // bias upward
+            sparkles[i].life = random(10, 18);
+            count--;
+        }
+    }
+}
+bool Avatar::isAttackHopping() { return attackHopActive; }
+
+void Avatar::attackHop() {
+    attackHopActive = true;
+    attackHopStartTime = millis();
+    attackHopIndex = 0;
+    attackHopOriginX = currentX;
+    attackHopTotal = random(3, 6);  // 3-5 hops
+    const int16_t hi = (int16_t)(DISPLAY_W / 2);  // clamp to left half (screen-relative)
+    int16_t prevX = currentX;
+    for (uint8_t i = 0; i < attackHopTotal; i++) {
+        if (i == attackHopTotal - 1) {
+            attackHopTargets[i] = attackHopOriginX;   // last hop returns home
+        } else {
+            int16_t offset = random(25, 56);
+            if (random(0, 2) == 0) offset = -offset;
+            int16_t target = prevX + offset;
+            if (target < 10) target = 10;
+            if (target > hi) target = hi;
+            attackHopTargets[i] = target;
+        }
+        prevX = attackHopTargets[i];
+    }
+}
+
+void Avatar::updateAndDrawSparkles(M5Canvas& canvas) {
+    uint16_t fg = getColorFG();
+    for (uint8_t i = 0; i < MAX_SPARKLES; i++) {
+        if (sparkles[i].life == 0) continue;
+        sparkles[i].x += sparkles[i].vx;
+        sparkles[i].y += sparkles[i].vy;
+        sparkles[i].life--;
+        if (sparkles[i].life > 6) canvas.fillRect(sparkles[i].x, sparkles[i].y, 2, 2, fg);
+        else                      canvas.drawPixel(sparkles[i].x, sparkles[i].y, fg);
+    }
+}
+
 void Avatar::draw(M5Canvas& canvas) {
     uint32_t now = millis();
     
@@ -530,32 +620,86 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
         jumpActive = false;
     }
     
+    // === Attack hop: slide currentX along the pre-computed hop targets ===
+    if (attackHopActive) {
+        uint32_t hopElapsed = now - attackHopStartTime;
+        uint32_t totalHopTime = (uint32_t)attackHopTotal * ATTACK_HOP_MS;
+        if (hopElapsed >= totalHopTime) {
+            attackHopActive = false;
+            currentX = attackHopOriginX;
+            if (grassMoving) facingRight = !grassDirection;
+        } else {
+            uint8_t hopIdx = hopElapsed / ATTACK_HOP_MS;
+            if (hopIdx >= attackHopTotal) hopIdx = attackHopTotal - 1;
+            attackHopIndex = hopIdx;
+            float hopT = (float)(hopElapsed - hopIdx * ATTACK_HOP_MS) / (float)ATTACK_HOP_MS;
+            float smoothT = hopT * hopT * (3.0f - 2.0f * hopT);
+            int16_t fromX = (hopIdx == 0) ? attackHopOriginX : attackHopTargets[hopIdx - 1];
+            int16_t toX = attackHopTargets[hopIdx];
+            currentX = fromX + (int)((toX - fromX) * smoothT);
+            facingRight = (toX > fromX);
+        }
+    }
+
     // Calculate vertical shake/jump offset
     int shakeY = 0;
-    if (jumpActive) {
-        // Cute jump: smooth arc up and down (sine-like)
-        // First half: go up, second half: come down
+    if (attackHopActive) {
+        uint32_t hopElapsed = now - attackHopStartTime;
+        uint32_t hopLocal = hopElapsed - (uint32_t)attackHopIndex * ATTACK_HOP_MS;
+        float t = (float)hopLocal / (float)ATTACK_HOP_MS;
+        float arc = 4.0f * t * (1.0f - t);
+        shakeY = -(int)(arc * ATTACK_HOP_HEIGHT);
+    } else if (jumpActive) {
         uint32_t elapsed = now - jumpStartTime;
-        float t = (float)elapsed / (float)JUMP_DURATION_MS;  // 0.0 to 1.0
-        // Parabolic arc: peaks at t=0.5
-        float arc = 4.0f * t * (1.0f - t);  // 0 → 1 → 0
+        float t = (float)elapsed / (float)JUMP_DURATION_MS;
+        float arc = 4.0f * t * (1.0f - t);
         shakeY = -(int)(arc * JUMP_HEIGHT);  // Negative = up
     } else if (attackShakeActive) {
-        // Combat shake: random ±4px (normal) / ±6px (strong)
         const int amp = attackShakeStrong ? 6 : 4;
         shakeY = (esp_random() % 2 == 0) ? amp : -amp;
+    } else if (spinActive) {
+        uint32_t elapsed = now - spinStart;
+        if (elapsed >= SPIN_DURATION_MS) { spinActive = false; }
+        else {
+            float t = (float)elapsed / (float)SPIN_DURATION_MS;
+            shakeY = -(int)(4.0f * t * (1.0f - t) * JUMP_HEIGHT);
+            uint8_t flipPhase = elapsed / (SPIN_DURATION_MS / SPIN_FLIPS);
+            facingRight = (flipPhase % 2 == 0);
+        }
+    } else if (perkUpActive) {
+        uint32_t elapsed = now - perkUpStart;
+        if (elapsed >= PERK_UP_DURATION_MS) { perkUpActive = false; }
+        else { float t = (float)elapsed / (float)PERK_UP_DURATION_MS;
+               shakeY = -(int)(4.0f * t * (1.0f - t) * PERK_UP_HEIGHT); }
+    } else if (flinchActive) {
+        uint32_t elapsed = now - flinchStart;
+        if (elapsed >= FLINCH_DURATION_MS) { flinchActive = false; }
+        else if (elapsed < 150) shakeY = 3;                      // duck down
+        else shakeY = (esp_random() % 2 == 0) ? 2 : -2;          // jitter
+    } else if (pawScratchActive) {
+        if (now - pawScratchStart >= PAW_SCRATCH_DURATION_MS) pawScratchActive = false;
+        // no Y offset — X oscillation handled below
+    } else if (treeColliding) {
+        shakeY = ((now / 40) % 3 == 0) ? -2 : ((now / 40) % 3 == 1) ? 2 : 0;
     } else if (transitioning || grassMoving) {
-        // Heavy walk bounce: 4-phase weighted pattern (heavier landing feel)
-        // Phase: down(0) → up-overshoot(-3) → settle-low(-1) → settle-mid(-2)
-        // 80ms per phase = 320ms full cycle, slower than Sirloin's snappy bounce
         static const int bouncePattern[4] = {0, -3, -1, -2};
         int phase = (now / 80) % 4;
         shakeY = bouncePattern[phase];
+    } else {
+        // Idle breathing: triangle wave, 3s period, 0 to -2px (lift only)
+        uint32_t breathePhase = now % 3000;
+        shakeY = (breathePhase < 1500) ? -(int)(breathePhase * 2 / 1500)
+                                       : -(int)((3000 - breathePhase) * 2 / 1500);
     }
-    
+
     // Use animated currentX position (set during transition or at rest)
     int startX = currentX;
-    int startY = 23 + shakeY;  // Apply shake offset (shifted down for XP bar at top)
+    if (pawScratchActive) {
+        uint32_t elapsed = now - pawScratchStart;
+        startX += ((elapsed / 100) % 2 == 0) ? 2 : -2;   // paw scratch X oscillation
+    }
+    if (treeColliding) startX += ((now / 50) % 2 == 0) ? PX : -PX;  // bonk into trunk
+    int startY = 40 + shakeY;  // pig feet align with the grass ground (baseY=106)
     int lineHeight = 22;
     
     for (uint8_t i = 0; i < lines; i++) {
@@ -581,12 +725,20 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
                     strncpy(bodyLine, "(    )z", sizeof(bodyLine));  // Tail trails on right
                 }
             } else {
-                // Stationary: always show tail based on facing direction
+                // Stationary: static 'z' tail, burst wiggle (z/~) on celebrations
+                char tail = 'z';
+                if (tailWiggleActive) {
+                    if ((now - tailWiggleStart) < TAIL_WIGGLE_DURATION_MS) {
+                        tail = ((now / 120) % 2 == 0) ? 'z' : '~';  // ~4 waggles/sec
+                    } else {
+                        tailWiggleActive = false;
+                    }
+                }
                 if (faceRight) {
-                    strncpy(bodyLine, "z(    )", sizeof(bodyLine));  // Facing right, tail on left
+                    snprintf(bodyLine, sizeof(bodyLine), "%c(    )", tail);  // tail on left
                     tailOnLeft = true;
                 } else {
-                    strncpy(bodyLine, "(    )z", sizeof(bodyLine));  // Facing left, tail on right
+                    snprintf(bodyLine, sizeof(bodyLine), "(    )%c", tail);  // tail on right
                 }
             }
             bodyLine[sizeof(bodyLine) - 1] = '\0';
@@ -638,6 +790,9 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
     
     // Draw grass below piglet
     drawGrass(canvas);
+
+    // Celebration sparkles on top of everything
+    updateAndDrawSparkles(canvas);
 }
 
 void Avatar::setGrassMoving(bool moving, bool directionRight) {
@@ -998,12 +1153,12 @@ void Avatar::fillPigBoundingBox(M5Canvas& canvas) {
 
     int boxX = currentX - 25;
     int boxW = 155;  // covers tail + 7 chars + margin
-    int boxY = 11;   // base y (23) minus jump headroom (12)
-    int boxH = 84;   // stops above grass near y95
+    int boxY = 28;   // base y (40) minus jump headroom (12)
+    int boxH = 84;   // down to the grass line (~112)
 
     // Clamp to screen
     if (boxX < 0) { boxW += boxX; boxX = 0; }
-    if (boxX + boxW > 240) boxW = 240 - boxX;
+    if (boxX + boxW > DISPLAY_W) boxW = DISPLAY_W - boxX;
 
     canvas.fillRect(boxX, boxY, boxW, boxH, getBGColor());
 }
