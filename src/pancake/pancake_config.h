@@ -72,8 +72,9 @@
 // ---- Piezo buzzer ------------------------------------------
 // Pancake: passive piezo driven by Arduino tone() (LEDC PWM).
 //   Wire GPIO -> buzzer(+) -> buzzer(-) -> GND (optional 100ohm in series).
-//   GPIO25 is free, non-strapping, and broken out; change here if needed
-//   (GPIO15 or GPIO22 are equally safe alternates).
+//   GPIO6 is free, non-strapping, and broken out on the C5-DevKitC-1 v1.2
+//   (NOT GPIO25 - that's a strapping/reset pin; GPIO22 is not broken out).
+//   GPIO15 is a safe alternate if GPIO6 is ever needed elsewhere.
 //
 //   >>> No buzzer fitted? Comment out PANCAKE_BUZZER_ENABLED below and the
 //       speaker falls back to a silent stub (all SFX become no-ops). <<<
@@ -84,7 +85,7 @@
 #else
   #define PANCAKE_BUZZER_ENABLED       // <-- comment out if no buzzer wired
   #ifdef PANCAKE_BUZZER_ENABLED
-    #define PANCAKE_BUZZER_PIN  25
+    #define PANCAKE_BUZZER_PIN  6
   #else
     #define PANCAKE_BUZZER_PIN  -1
   #endif
