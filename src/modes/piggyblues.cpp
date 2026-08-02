@@ -655,6 +655,7 @@ void PiggyBluesMode::stop() {
     
     Avatar::setGrassMoving(false);
     Avatar::resetGrassPattern();
+    Avatar::waveRipple(WaveMode::NONE);
     
     bool doReboot = (random(0, 100) < REBOOT_CHANCE_PERCENT);
     if (doReboot) {
@@ -718,6 +719,7 @@ void PiggyBluesMode::update() {
         // We are not advertising. Check if it's time to start a new burst.
         if (now - lastBurstTime >= burstInterval) {
             setAdvertisingNow(true);
+            Avatar::waveRipple(WaveMode::OUTGOING);  // radiate a wave on each BLE spam burst
             advertisingStartTime = now;
             lastBurstTime = now; // Reset timer for the next burst interval.
             

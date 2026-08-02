@@ -297,9 +297,10 @@ void WarhogMode::stop() {
     scanInProgress = false;
     scanResult = -2;
     
-    // Stop grass animation
+    // Stop grass animation and wave ripples
     Avatar::setGrassMoving(false);
-    
+    Avatar::waveRipple(WaveMode::NONE);
+
     running = false;
     
     // Put GPS to sleep if power management enabled
@@ -383,6 +384,7 @@ void WarhogMode::update() {
         Avatar::setGrassMoving(hasGPSFix);
         lastGPSState = hasGPSFix;
     }
+    if (hasGPSFix) Avatar::waveRipple(WaveMode::INCOMING);  // scanning waves while wardriving
     
     // Distance tracking for XP (every 5 seconds when GPS is available)
     if (hasGPSFix && now - lastDistanceCheck >= 5000) {
