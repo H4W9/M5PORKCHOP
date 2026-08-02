@@ -2756,8 +2756,14 @@ void OinkMode::sendDeauthFrame(const uint8_t* bssid, const uint8_t* station, uin
     memcpy(deauthPacket + 10, bssid, 6);
     memcpy(deauthPacket + 16, bssid, 6);
     deauthPacket[24] = reason;
-    
-    esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false);
+
+    esp_err_t _txr = esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false);
+    static bool _deauthLogged = false;
+    if (!_deauthLogged) {
+        _deauthLogged = true;
+        Serial.printf("[DIAG-TX] first deauth ch=%d ret=%d (0=ESP_OK; nonzero=injection blocked)\n",
+                      currentChannel, (int)_txr);
+    }
 }
 
 void OinkMode::sendDeauthBurst(const uint8_t* bssid, const uint8_t* station, uint8_t count) {
@@ -2835,7 +2841,13 @@ void OinkMode::sendAuthenticationRequest(const uint8_t* bssid) {
     memcpy(authFrame + 16, bssid, 6);  // Addr3: BSSID
     // Auth body: Algorithm=Open System(0), Seq=1, Status=Success(0)
     authFrame[26] = 0x01;              // Authentication SEQ: 1
-    esp_wifi_80211_tx(WIFI_IF_STA, authFrame, sizeof(authFrame), false);
+    esp_err_t _txr = esp_wifi_80211_tx(WIFI_IF_STA, authFrame, sizeof(authFrame), false);
+    static bool _authLogged = false;
+    if (!_authLogged) {
+        _authLogged = true;
+        Serial.printf("[DIAG-TX] first auth ch=%d ret=%d (0=ESP_OK; nonzero=injection blocked)\n",
+                      currentChannel, (int)_txr);
+    }
 }
 
 void OinkMode::sendAssociationRequest(const uint8_t* bssid, const char* ssid, uint8_t ssidLen) {
@@ -2895,7 +2907,13 @@ void OinkMode::sendAssociationRequest(const uint8_t* bssid, const char* ssid, ui
     assocReq[bodyOffset++] = 0x18;  // 12 Mbps
     assocReq[bodyOffset++] = 0x24;  // 18 Mbps
     
-    esp_wifi_80211_tx(WIFI_IF_STA, assocReq, bodyOffset, false);
+    esp_err_t _txr = esp_wifi_80211_tx(WIFI_IF_STA, assocReq, bodyOffset, false);
+    static bool _assocLogged = false;
+    if (!_assocLogged) {
+        _assocLogged = true;
+        Serial.printf("[DIAG-TX] first assoc ch=%d ret=%d (0=ESP_OK; nonzero=injection blocked)\n",
+                      currentChannel, (int)_txr);
+    }
 }
 
 void OinkMode::clearTargetClients() {
