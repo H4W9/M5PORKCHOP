@@ -258,7 +258,7 @@ void Avatar::init() {
     // This ensures bubble can float beside pig from the start
     bool startRight = random(0, 2) == 0;
     onRightSide = startRight;
-    currentX = startRight ? 108 : 20;  // Start at proper edge position
+    currentX = startRight ? (DISPLAY_W - 132) : 20;  // Start at proper edge (screen-relative)
     facingRight = !startRight;  // Face toward center (more interesting)
     lastFlipTime = millis();
     flipInterval = random(25000, 50000);  // First walk: 25-50s
@@ -673,10 +673,12 @@ void Avatar::draw(M5Canvas& canvas) {
             int walkRoll = random(0, 100);
             int targetX;
             
-            // Define edge zones (bubble floats beside pig, not above)
-            const int LEFT_EDGE = 20;   // Left rest position
-            const int RIGHT_EDGE = 108; // Right rest position
-            
+            // Define edge zones (bubble floats beside pig, not above).
+            // Right edge is screen-relative so the pig reaches the actual right
+            // edge on the wider Pancake (108 @240, 188 @320).
+            const int LEFT_EDGE = 20;                 // Left rest position
+            const int RIGHT_EDGE = DISPLAY_W - 132;   // Right rest position
+
             if (walkRoll < 50) {
                 // 50%: Walk to opposite edge (primary behavior)
                 targetX = onRightSide ? LEFT_EDGE : RIGHT_EDGE;
@@ -686,7 +688,7 @@ void Avatar::draw(M5Canvas& canvas) {
             } else if (walkRoll < 95) {
                 // 10%: Short shuffle within current edge zone
                 if (onRightSide) {
-                    targetX = random(85, 108);  // Stay in right zone
+                    targetX = random(RIGHT_EDGE - 23, RIGHT_EDGE + 1);  // Stay in right zone
                 } else {
                     targetX = random(20, 45);   // Stay in left zone
                 }
@@ -758,8 +760,9 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
     // Star system background layer (behind pig)
     updateStars();
     drawStars(canvas);
-    drawTree(canvas);   // Fruit tree — behind the pig, on the grass line
     fillPigBoundingBox(canvas);
+    // NOTE: the fruit tree is now drawn AFTER the pig (below) so the pig doesn't
+    // block it — the pig stands behind the tree and shakes it.
 
     canvas.setTextDatum(top_left);
     canvas.setTextSize(3);
@@ -948,7 +951,11 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
             canvas.drawString(frame[i], startX, startY + i * lineHeight);
         }
     }
-    
+
+    // Fruit tree — drawn IN FRONT of the pig (pig stands behind it and shakes it).
+    // (Collision state it sets is consumed by the pig one frame later — fine.)
+    drawTree(canvas);
+
     // Draw grass below piglet
     drawGrass(canvas);
 
@@ -975,10 +982,10 @@ void Avatar::setGrassMoving(bool moving, bool directionRight) {
         
         grassDirection = directionRight;
         
-        // Calculate correct treadmill position based on direction
-        // Grass RIGHT: pig at X=108 (tail margin on right)
-        // Grass LEFT: pig at X=20 (tail margin on left: 20-18=2)
-        int targetX = directionRight ? 108 : 20;
+        // Calculate correct treadmill position based on direction.
+        // Grass RIGHT: pig walks to the right edge (108 @240, 188 @320 — screen-relative)
+        // Grass LEFT:  pig at X=20 (tail margin on left: 20-18=2)
+        int targetX = directionRight ? (DISPLAY_W - 132) : 20;
         
         if (transitioning) {
             // Check if this is a coast-back transition (pig returning to rest at X=20)
