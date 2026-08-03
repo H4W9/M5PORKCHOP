@@ -106,11 +106,12 @@ void setup() {
     // caused by the MSPI timing barrier consuming heap before __init_array.
     pancakeHalInit();
 
-    // Pancake: M5Cardputer.begin() initialises TFT, touch, keyboard, and SD.
-    Serial.println("[BOOT] Calling M5Cardputer.begin()...");
+    // Pancake HAL begin() initialises TFT, touch, keyboard, and SD.
+    // (M5Cardputer here is the Pancake HAL shim, not a real Cardputer.)
+    Serial.println("[BOOT] Calling Pancake.begin()...");
     Serial.flush();
     M5Cardputer.begin();
-    Serial.println("[BOOT] M5Cardputer.begin() done");
+    Serial.println("[BOOT] Pancake.begin() done");
     Serial.flush();
 #else
     // Deassert CapLoRa SX1262 CS BEFORE SD init. The SX1262 shares

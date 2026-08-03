@@ -1767,7 +1767,15 @@ void OinkMode::processDataFrame(const uint8_t* payload, uint16_t len, int8_t rss
         // This is EAPOL!
         const uint8_t* srcMac = payload + 10;  // TA
         const uint8_t* dstMac = payload + 4;   // RA
-        
+
+        // DIAG: prove EAPOL frames are actually reaching us. If these never
+        // print while deauthing an AP with an active client, the deauth isn't
+        // forcing a reconnect (or data RX is dropping EAPOL); if they print but
+        // no handshake is stored, the issue is downstream in processEAPOL.
+        Serial.printf("[DIAG-EAPOL] EAPOL rx ch=%d len=%d %02X:%02X:%02X->%02X:%02X:%02X\n",
+                      currentChannel, (int)(len - offset - 8),
+                      srcMac[0], srcMac[1], srcMac[2], dstMac[3], dstMac[4], dstMac[5]);
+
         processEAPOL(payload + offset + 8, len - offset - 8, srcMac, dstMac, payload, len, rssi);
     }
 }

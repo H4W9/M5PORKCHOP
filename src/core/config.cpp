@@ -321,9 +321,11 @@ bool Config::init() {
 
     // Retry with progressive SPI speeds for reliability
     sdAvailable = false;
-    const int maxRetries = 6;
+    // 25 MHz is unreliable on the Pancake's shared TFT/SD bus (first CMD0
+    // fails, then it recovers at 20 MHz) — start at 20 MHz so it mounts on the
+    // first attempt with no error noise.
+    const int maxRetries = 5;
     const uint32_t speeds[] = {
-        25000000, // 25 MHz
         20000000, // 20 MHz
         10000000, // 10 MHz
         8000000,  // 8 MHz
