@@ -11,9 +11,15 @@ namespace HeapPolicy {
 
     // General allocation safety thresholds
     static constexpr size_t kMinHeapForOinkNetworkAdd = 30000;
-    static constexpr size_t kMinHeapForHandshakeAdd = 60000;
+    static constexpr size_t kMinHeapForHandshakeAdd = 60000;  // legacy internal-RAM gate, unused now that handshakes/pmkids are PSRAM-backed (see kMinPsramForHandshakeAdd)
     static constexpr size_t kMinHeapForReconGrowth = 20000;
     static constexpr size_t kMinHeapForSpectrumGrowth = 20000;
+
+    // PSRAM headroom for handshake/PMKID storage (PsramAllocator-backed).
+    // Internal RAM is the scarce resource on Pancake (C5); PSRAM (8MB) is not,
+    // so these are generous compared to the old internal-heap thresholds above.
+    static constexpr size_t kMinPsramForHandshakeAdd = 200000;  // 200KB free PSRAM
+    static constexpr size_t kMinPsramForPmkidAdd = 100000;      // 100KB free PSRAM
 
     // Heap stabilization / recovery thresholds
     static constexpr size_t kHeapStableThreshold = 50000;
