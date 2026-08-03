@@ -680,6 +680,17 @@ void OinkMode::update() {
         
         // Create or find handshake entry in main thread context
         int idx = findOrCreateHandshakeSafe(pendingHandshakes[slot]->bssid, pendingHandshakes[slot]->station);
+		if (idx < 0) {
+		   // DIAGNOSTIC: Log why handshake creation was rejected
+		   Serial.printf("[HS-REJECT] bssid=%02X:%02X:%02X:%02X:%02X:%02X "
+		                  "free=%u largest=%u pressure=%d\n",
+		                  pendingHandshakes[slot]->bssid[0], pendingHandshakes[slot]->bssid[1],
+		                  pendingHandshakes[slot]->bssid[2], pendingHandshakes[slot]->bssid[3],
+		                  pendingHandshakes[slot]->bssid[4], pendingHandshakes[slot]->bssid[5],
+		                  (unsigned)ESP.getFreeHeap(),
+		                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+		                  (int)HeapHealth::getPressureLevel());
+		}
         if (idx >= 0) {
             CapturedHandshake& hs = handshakes[idx];
             
@@ -2129,15 +2140,30 @@ int OinkMode::findOrCreateHandshakeSafe(const uint8_t* bssid, const uint8_t* sta
     
     // Limit check
     if (handshakes.size() >= MAX_HANDSHAKES) {
-        NetworkRecon::exitCritical();
+        Serial.printf("[HS-GATE] MAX_HANDSHAKES reached (%d)\n", MAX_HANDSHAKES);
+		NetworkRecon::exitCritical();
         return -1;
     }
     // Pressure gate: block new handshakes at Warning+ (aggressive shedding)
     if (HeapHealth::getPressureLevel() >= HeapPressureLevel::Warning) {
-        NetworkRecon::exitCritical();
+        Serial.printf("[HS-GATE] pressure=%d (Warning+) blocking new HS "
+                   "free=%u largest=%u\n",
+                   (int)HeapHealth::getPressureLevel(),
+                   (unsigned)ESP.getFreeHeap(),
+                   (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+		NetworkRecon::exitCritical();
         return -1;
     }
-    if (ESP.getFreeHeap() < HeapPolicy::kMinHeapForHandshakeAdd) {
+    // PATCHED: Use heap_caps_get_free_size(MALLOC_CAP_8BIT) which includes
+	// PSRAM. The Pancake has 8MB PSRAM but only ~25KB internal SRAM during
+	// active OINK. ESP.getFreeHeap() only counts internal SRAM, incorrectly
+	// blocking handshake creation even when 8MB PSRAM is available.
+	size_t totalFree = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+	if (totalFree < HeapPolicy::kMinHeapForHandshakeAdd) {
+		Serial.printf("[HS-GATE] totalFree=%u < %u (internal=%u)\n",
+					(unsigned)totalFree,
+					(unsigned)HeapPolicy::kMinHeapForHandshakeAdd,
+					(unsigned)ESP.getFreeHeap());
         NetworkRecon::exitCritical();
         return -1;
     }
@@ -2331,7 +2357,9 @@ void OinkMode::autoSaveCheck() {
             if (!SD.exists(handshakesDir)) {
                 if (!SD.mkdir(handshakesDir)) {
                     SDLog::log("OINK", "Failed to create handshakes directory");
-                    continue;  // Skip this handshake if we can't create directory
+                    // PATCHED: Echo to Serial so failure is visible without SDLog
+					Serial.printf("[HS-DIR] mkdir FAILED for %s\n", handshakesDir);
+					continue;  // Skip this handshake if we can't create directory
                 }
             }
             
@@ -2344,6 +2372,13 @@ void OinkMode::autoSaveCheck() {
                                            handshakesDir, hs.ssid, hs.bssid, "_hs.22000");
             bool hs22kOk = saveHandshake22000(hs, filename22000);
             
+			// PATCHED: Log save results to Serial for diagnostics
+			Serial.printf("[HS-SAVE] ssid=%s pcap=%s 22000=%s path=%s\n",
+            hs.ssid,
+			pcapOk ? "OK" : "FAIL",
+            hs22kOk ? "OK" : "FAIL",
+            filename);
+			
             if (pcapOk || hs22kOk) {
                 hs.saved = true;
                 SDLog::log("OINK", "Handshake saved: %s (pcap:%s 22000:%s)",
