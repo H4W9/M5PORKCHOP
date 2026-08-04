@@ -754,6 +754,22 @@ void Porkchop::handleInput() {
         }
         return;
     }
+
+    // Audio toggle with A key (global, works in any mode) — only meaningful on
+    // hardware that actually has a buzzer; on silent builds 'a' stays a plain letter.
+#ifdef PANCAKE_BUZZER_ENABLED
+    {
+        static bool aWasPressed = false;
+        bool aPressed = M5Cardputer.Keyboard.isKeyPressed('a') || M5Cardputer.Keyboard.isKeyPressed('A');
+        if (aPressed && !aWasPressed) {
+            bool nowOn = !Config::personality().soundEnabled;
+            Config::personality().soundEnabled = nowOn;
+            if (nowOn) SFX::play(SFX::CONFIRM);
+            Display::showToast(nowOn ? "SOUND ON" : "SOUND OFF");
+        }
+        aWasPressed = aPressed;
+    }
+#endif
     
     // T key stress test cycle disabled
     
