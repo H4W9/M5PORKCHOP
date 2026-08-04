@@ -47,7 +47,7 @@ static const uint16_t KB_CYAN    = TFT_CYAN;
 static const uint32_t KB_PRESS_MS = 90;
 
 // ---- Shortcut classification --------------------------------
-// Returns 0=normal 1=green(nav) 2=red(attack)
+// Returns 0=normal 1=green(nav) 2=red(attack) 3=cyan(screenshot)
 static inline int kbShortcutClass(char ch, uint8_t code) {
     if (code == PKEY_ENTER  || code == PKEY_BKSP    ||
         code == PKEY_BACKTICK|| code == PKEY_SEMICOL ||
@@ -55,10 +55,14 @@ static inline int kbShortcutClass(char ch, uint8_t code) {
         code == PKEY_SLASH  || code == PKEY_SPACE)  return 1;
     if (!ch) return 0;
     char c = (ch >= 'a' && ch <= 'z') ? (char)(ch - 32) : ch;
+    if (c == 'P') return 3;   // screenshot — same key the SCR button emits
     if (c == 'O') return 2;
     if (c == 'B') return 2;
     if (c == 'D' || c == 'W' || c == 'H' || c == 'F' ||
         c == 'S' || c == 'T' || c == 'C' || c == 'G') return 1;
+#ifdef PANCAKE_BUZZER_ENABLED
+    if (c == 'A') return 1;   // audio toggle — only wired up on buzzer-equipped hardware
+#endif
     if (c == '1' || c == '2') return 1;
     return 0;
 }
@@ -248,7 +252,7 @@ private:
         int sc = kbShortcutClass(k.ch, k.code);
         uint16_t fill   = pressed ? KB_KEY_PRS : KB_KEY_NRM;
         uint16_t textcol= pressed ? KB_TEXT
-                        : (k.code == PKEY_SCREENSHOT ? KB_CYAN
+                        : (sc == 3 ? KB_CYAN
                         : (sc == 2 ? KB_RED : (sc == 1 ? KB_GREEN : KB_TEXT)));
 
         g->fillRect(k.x, ky, k.w, k.h, fill);
