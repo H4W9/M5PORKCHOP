@@ -43,6 +43,28 @@ static uint8_t thunderFlashState = 0;  // 0=off, 1=on
 static uint32_t thunderMinInterval = 50000;  // 50-90s between storms (adjusts with mood)
 static uint32_t thunderMaxInterval = 90000;
 
+// === LIGHTNING BOLT STATE ===
+// A jagged golden bolt strikes the grass on whichever side of the screen the
+// pig ISN'T standing on, then blooms into a starburst + splash (same shape as
+// a bird impact, recolored gold). The bolt lands and finishes blooming BEFORE
+// the screen itself flashes, so it reads as the cause of the flash.
+static bool boltActive = false;              // bolt currently drawing itself in
+static uint32_t boltStartTime = 0;
+static const uint16_t BOLT_STRIKE_MS = 180;  // time for the bolt to reach the ground
+static uint8_t pendingStormFlashes = 0;      // flash count, held until the bolt lands
+static const uint8_t BOLT_POINTS = 6;
+static int16_t boltPathX[BOLT_POINTS];
+static int16_t boltPathY[BOLT_POINTS];
+static constexpr uint16_t BOLT_GOLD = 0xFEA0;  // golden yellow (RGB565)
+static float boltImpactX = 0.0f;
+
+struct BoltSplash { float x, y, vx, vy; uint8_t life; bool active; };
+static BoltSplash boltSplashes[6];
+static bool    boltExplosionActive = false;
+static uint8_t boltExplosionRadius = 0;
+static uint8_t boltExplosionMaxRadius = 0;
+static uint8_t boltExplosionLife = 0;
+
 // === WIND STATE ===
 struct WindParticle {
     float x;
@@ -219,6 +241,11 @@ void setRaining(bool active) {
         thunderFlashState = 0;
         thunderFlashesRemaining = 0;
         lastThunderStorm = millis();
+        // ...and any in-flight bolt strike, so it can't freeze mid-air either
+        boltActive = false;
+        pendingStormFlashes = 0;
+        boltExplosionActive = false;
+        for (int s = 0; s < 6; s++) boltSplashes[s].active = false;
     }
     rainActive = active;
 } 
@@ -484,19 +511,80 @@ static void updateRain(uint32_t now) {
     }
 }
 
+// Picks a ground-strike X on whichever side of the screen the pig ISN'T
+// standing on, with a little randomization within that free space.
+static int16_t computeBoltStrikeX() {
+    int16_t pigL = (int16_t)Avatar::getCurrentX();
+    int16_t pigR = pigL + 108;   // pig sprite is ~108px wide
+    if (Avatar::isOnRightSide()) {
+        int16_t freeW = pigL;                       // open ground to the left
+        return (freeW > 24) ? (int16_t)random(12, freeW - 12) : (int16_t)(pigL / 2);
+    } else {
+        int16_t freeW = DISPLAY_W - pigR;            // open ground to the right
+        return (freeW > 24) ? (int16_t)(pigR + random(12, freeW - 12)) : (int16_t)(pigR + freeW / 2);
+    }
+}
+
+static void spawnBolt() {
+    int16_t strikeX = computeBoltStrikeX();
+    boltImpactX = (float)strikeX;
+    int16_t topY = 6;
+    int16_t spanY = GROUND_Y - topY;
+    for (int i = 0; i < BOLT_POINTS; i++) {
+        boltPathY[i] = topY + (int16_t)((int32_t)spanY * i / (BOLT_POINTS - 1));
+        bool endpoint = (i == 0 || i == BOLT_POINTS - 1);
+        boltPathX[i] = strikeX + (endpoint ? 0 : (int16_t)random(-9, 10));
+    }
+    boltActive = true;
+    boltStartTime = millis();
+}
+
 static void updateThunder(uint32_t now) {
     // Check if time for new storm
-    if (!thunderFlashing && thunderFlashesRemaining == 0) {
+    if (!thunderFlashing && !boltActive && thunderFlashesRemaining == 0 && pendingStormFlashes == 0) {
         if (now - lastThunderStorm > thunderMinInterval) {
             uint32_t interval = random(thunderMinInterval, thunderMaxInterval);
             if (now - lastThunderStorm >= interval) {
-                // Start new storm
-                thunderFlashesRemaining = random(2, 4);  // 2-3 flashes
+                // A storm is starting: the bolt strikes first, flashes follow once it lands.
+                pendingStormFlashes = (uint8_t)random(2, 4);  // 2-3 flashes
                 lastThunderStorm = now;
+                spawnBolt();
             }
         }
     }
-    
+
+    // Animate the bolt strike; once it reaches the grass, bloom the impact
+    // and hand off to the flash sequence below.
+    if (boltActive && now - boltStartTime >= BOLT_STRIKE_MS) {
+        boltActive = false;
+        boltExplosionActive = true;
+        boltExplosionRadius = 0;
+        boltExplosionMaxRadius = (uint8_t)random(10, 14);
+        boltExplosionLife = 12;
+        int splashed = 0;
+        for (int s = 0; s < 6 && splashed < 4; s++) if (!boltSplashes[s].active) {
+            boltSplashes[s].x = boltImpactX + (float)random(-6, 7);
+            boltSplashes[s].y = (float)GROUND_Y;
+            boltSplashes[s].vx = (float)random(-30, 31) / 10.0f;
+            boltSplashes[s].vy = -1.0f - (float)random(0, 16) / 10.0f;
+            boltSplashes[s].life = (uint8_t)random(12, 19);
+            boltSplashes[s].active = true; splashed++;
+        }
+        thunderFlashesRemaining = pendingStormFlashes;
+        pendingStormFlashes = 0;
+    }
+
+    // Animate the impact bloom + splash independently of the bolt/flash state.
+    if (boltExplosionActive) {
+        if (boltExplosionRadius < boltExplosionMaxRadius) boltExplosionRadius++;
+        else if (--boltExplosionLife == 0) boltExplosionActive = false;
+    }
+    for (int s = 0; s < 6; s++) if (boltSplashes[s].active) {
+        boltSplashes[s].x += boltSplashes[s].vx; boltSplashes[s].y += boltSplashes[s].vy;
+        boltSplashes[s].vy += 0.3f;
+        if (--boltSplashes[s].life == 0) boltSplashes[s].active = false;
+    }
+
     // Execute flash sequence
     if (thunderFlashesRemaining > 0 && !thunderFlashing) {
         thunderFlashing = true;
@@ -602,11 +690,79 @@ void drawClouds(M5Canvas& canvas, uint16_t colorFG) {
     canvas.drawString(cloudPattern, 0, cloudY);
 }
 
+// Blocky Bresenham line, thickened by one extra column, matching the game's
+// chunky 3px pixel-art style (same grid as birdSnap/BIRD_PX).
+static void drawBoltLine(M5Canvas& canvas, int16_t x1, int16_t y1,
+                          int16_t x2, int16_t y2, uint16_t color) {
+    int gx1 = x1 / BIRD_PX, gy1 = y1 / BIRD_PX;
+    int gx2 = x2 / BIRD_PX, gy2 = y2 / BIRD_PX;
+    int dx = abs(gx2 - gx1), dy = abs(gy2 - gy1);
+    int sx = (gx1 < gx2) ? 1 : -1, sy = (gy1 < gy2) ? 1 : -1;
+    int err = dx - dy;
+    while (true) {
+        canvas.fillRect(gx1 * BIRD_PX, gy1 * BIRD_PX, BIRD_PX, BIRD_PX, color);
+        canvas.fillRect(gx1 * BIRD_PX + BIRD_PX, gy1 * BIRD_PX, BIRD_PX, BIRD_PX, color);
+        if (gx1 == gx2 && gy1 == gy2) break;
+        int e2 = 2 * err;
+        if (e2 > -dy) { err -= dy; gx1 += sx; }
+        if (e2 < dx)  { err += dx; gy1 += sy; }
+    }
+}
+
+// Draws the in-flight bolt (wiped in top-to-bottom) plus the golden
+// starburst + splash that blooms once it lands — same shapes as the bird
+// impact, just always gold instead of following the flash/inverted colors.
+static void drawBoltImpl(M5Canvas& canvas) {
+    if (boltActive) {
+        uint32_t elapsed = millis() - boltStartTime;
+        float t = (float)elapsed / (float)BOLT_STRIKE_MS;
+        if (t > 1.0f) t = 1.0f;
+        int16_t revealY = boltPathY[0] + (int16_t)((float)(GROUND_Y - boltPathY[0]) * t);
+        for (int i = 0; i < BOLT_POINTS - 1; i++) {
+            int16_t y1 = boltPathY[i], y2 = boltPathY[i + 1];
+            if (y1 >= revealY) break;
+            int16_t x1 = boltPathX[i], x2 = boltPathX[i + 1];
+            if (y2 <= revealY) {
+                drawBoltLine(canvas, x1, y1, x2, y2, BOLT_GOLD);
+            } else {
+                float segT = (y2 > y1) ? (float)(revealY - y1) / (float)(y2 - y1) : 0.0f;
+                int16_t midX = x1 + (int16_t)((float)(x2 - x1) * segT);
+                drawBoltLine(canvas, x1, y1, midX, revealY, BOLT_GOLD);
+                break;
+            }
+        }
+    }
+
+    if (boltExplosionActive && !(boltExplosionLife < 4 && (boltExplosionLife % 2 == 0))) {
+        int16_t cx = birdSnap((int16_t)boltImpactX), cy = birdSnap(GROUND_Y);
+        int16_t r = (int16_t)boltExplosionRadius;
+        const int16_t pts[][2] = {
+            {0,(int16_t)(-r)},{0,r},{(int16_t)(-r),0},{r,0},
+            {(int16_t)(r*7/10),(int16_t)(-r*7/10)},{(int16_t)(-r*7/10),(int16_t)(-r*7/10)},
+            {(int16_t)(r*7/10),(int16_t)(r*7/10)},{(int16_t)(-r*7/10),(int16_t)(r*7/10)} };
+        for (int p = 0; p < 8; p++) {
+            int16_t px = birdSnap(cx + pts[p][0]), py = birdSnap(cy + pts[p][1]);
+            if (px >= 0 && px < DISPLAY_W && py >= 0 && py < MAIN_H)
+                canvas.fillRect(px, py, BIRD_PX, BIRD_PX, BOLT_GOLD);
+        }
+    }
+    for (int s = 0; s < 6; s++) {
+        if (!boltSplashes[s].active) continue;
+        if (boltSplashes[s].life < 4 && (boltSplashes[s].life % 2 == 0)) continue;
+        int16_t sx = birdSnap((int16_t)boltSplashes[s].x), sy = birdSnap((int16_t)boltSplashes[s].y);
+        if (sx >= 0 && sx < DISPLAY_W && sy >= 0 && sy < MAIN_H)
+            canvas.fillRect(sx, sy, BIRD_PX, BIRD_PX, BOLT_GOLD);
+    }
+}
+
 void draw(M5Canvas& canvas, uint16_t colorFG, uint16_t colorBG) {
     // During thunder flash, invert colors for rain/wind (matches sirloin)
     uint16_t drawColor = isThunderFlashing() ? colorBG : colorFG;
     // Realistic theme: rain reads as light blue (not thunder-flashing).
     uint16_t rainColor = (isRealisticTheme() && !isThunderFlashing()) ? 0x5D1F : drawColor;
+
+    // Lightning bolt + impact bloom (always gold, drawn before the flash it precedes)
+    drawBoltImpl(canvas);
 
     // Draw rain
     if (rainActive) {
