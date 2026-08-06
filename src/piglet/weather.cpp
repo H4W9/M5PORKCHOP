@@ -280,7 +280,7 @@ static ImpactSplash impactSplashes[6];
 static int8_t whistlingBird = -1;
 static uint32_t lastBirdUpdate = 0;
 static uint32_t nextBirdSpawn = 0;
-static const int16_t GROUND_Y = 106;   // grass ground line (matches avatar)
+static const int16_t GROUND_Y = SCENE_GROUND_Y;   // grass ground line (matches avatar)
 
 static void spawnBird() {
     int slot = -1;
@@ -503,7 +503,7 @@ static void updateRain(uint32_t now) {
         if (rainDrops[i].x >= (float)DISPLAY_W) rainDrops[i].x -= (float)DISPLAY_W;
 
         // Respawn just below clouds when reaching the grass ground (~106)
-        if (rainDrops[i].y >= 103.0f) {
+        if (rainDrops[i].y >= (float)(GROUND_Y - 3)) {
             rainDrops[i].y = (float)random(16, 23);  // Just below cloud layer
             rainDrops[i].x = (float)random(0, DISPLAY_W);
             rainDrops[i].speed = random(5, 9);  // Fast rain
@@ -648,7 +648,7 @@ static void updateWind(uint32_t now) {
                                        : ((float)DISPLAY_W + 5.0f + random(0, 40));
                 windParticles[i].x = spawnX;
                 windParticles[i].spawnX = spawnX;
-                windParticles[i].y = (float)random(20, 88);
+                windParticles[i].y = (float)random(20, GROUND_Y - 10);  // span sky down to near grass
                 windParticles[i].speed = 2.0f + (float)random(0, 30) / 10.0f;  // 2.0-5.0
                 windParticles[i].maxTravel = (float)random(180, 281);
                 windParticles[i].baseSize = random(1, 4);  // 1-3
@@ -789,7 +789,7 @@ void draw(M5Canvas& canvas, uint16_t colorFG, uint16_t colorBG) {
             
             // Draw 6-pixel tall × 2-pixel wide raindrop (slightly taller for visibility)
             for (int dy = 0; dy < 6; dy++) {
-                if (y + dy < 103) {  // clip just above the grass ground (~106)
+                if (y + dy < GROUND_Y - 3) {  // clip just above the grass ground
                     canvas.drawPixel(x, y + dy, rainColor);
                     if (x + 1 < DISPLAY_W) canvas.drawPixel(x + 1, y + dy, rainColor);
                 }

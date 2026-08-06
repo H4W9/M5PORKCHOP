@@ -512,7 +512,7 @@ void Avatar::drawWaveRipples(M5Canvas& canvas, bool faceRight, int startX, int s
             int16_t tbx = treeTrunk.baseX + treeScrollOffset;
             while (tbx > WRAP_HI) tbx -= WRAP_SPAN;
             while (tbx < WRAP_LO) tbx += WRAP_SPAN;
-            int32_t dx = tbx - waveCX, dy = 106 - waveCY;
+            int32_t dx = tbx - waveCX, dy = SCENE_GROUND_Y - waveCY;
             int32_t dist2 = dx * dx + dy * dy;
             int32_t rOuter = r + treeTrunk.crownRadius;
             int32_t rInner = r - treeTrunk.crownRadius; if (rInner < 0) rInner = 0;
@@ -528,7 +528,7 @@ bool Avatar::checkBirdWaveCollision(int16_t bx, int16_t by) {
     uint32_t now = millis();
     if (now >= waveBurstEnd) return false;
     int waveCX = facingRight ? (currentX + 85) : (currentX + 23);
-    int waveCY = 40 + 31;  // nominal startY=40
+    int waveCY = SCENE_PIG_TOP_Y + 31;  // nominal pig nose height
     uint32_t elapsed = now - waveBurstStart;
     const uint16_t CYCLE_MS = 3600;
     const int16_t R_MAX = 130;
@@ -869,7 +869,7 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
         startX += ((elapsed / 100) % 2 == 0) ? 2 : -2;   // paw scratch X oscillation
     }
     if (treeColliding) startX += ((now / 50) % 2 == 0) ? PX : -PX;  // bonk into trunk
-    int startY = 40 + shakeY;  // pig feet align with the grass ground (baseY=106)
+    int startY = SCENE_PIG_TOP_Y + shakeY;  // pig feet align with the grass ground (SCENE_GROUND_Y)
     int lineHeight = 22;
 
     // Radio-activity wave ripples behind the pig (scan = incoming, deauth = outgoing)
@@ -1103,7 +1103,7 @@ void Avatar::drawGrass(M5Canvas& canvas) {
 
     uint32_t now = millis();
     uint16_t color = realActive() ? REAL_GRASS : getDrawColor();  // green in Realistic
-    const int16_t baseY = 106;                 // ground line (matches the tree)
+    const int16_t baseY = SCENE_GROUND_Y;                 // ground line (matches the tree)
     const int count  = DISPLAY_W / GRASS_STRIDE;
     const int center = DISPLAY_W / 2;
 
@@ -1701,7 +1701,7 @@ void Avatar::dropFruit() {
     uint8_t idx = treeFruitCount - 1;
     const TreeFruit& f = treeFruits[idx];
 
-    const int16_t baseY = 106;
+    const int16_t baseY = SCENE_GROUND_Y;
     const int16_t WRAP_HI = DISPLAY_W + 20, WRAP_LO = -80, WRAP_SPAN = WRAP_HI - WRAP_LO;
     int16_t bx = treeTrunk.baseX + treeScrollOffset;
     while (bx > WRAP_HI) bx -= WRAP_SPAN;    // screen-relative wrap
@@ -1869,7 +1869,7 @@ void Avatar::drawTree(M5Canvas& canvas) {
     uint16_t splashCol  = real ? REAL_FRUIT         : fg;
     uint32_t now = millis();
 
-    const int16_t baseY = 106;
+    const int16_t baseY = SCENE_GROUND_Y;
     int16_t bx = treeTrunk.baseX + treeScrollOffset;
     // Wrap to screen bounds (screen-relative)
     while (bx > WRAP_HI) bx -= WRAP_SPAN;
@@ -2002,7 +2002,7 @@ void Avatar::drawTree(M5Canvas& canvas) {
         int16_t fallDist = (int16_t)(0.5f * 800.0f * t * t);
         int16_t currentY = droppingFruits[i].y + fallDist;
 
-        if (currentY >= 106) {
+        if (currentY >= SCENE_GROUND_Y) {
             droppingFruits[i].active = false;
 
             uint8_t splashCount = 3 + (uint8_t)(esp_random() % 2);

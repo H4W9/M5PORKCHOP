@@ -34,6 +34,17 @@ enum class PorkchopMode : uint8_t;
 #define MAIN_H (DISPLAY_H - TOP_BAR_H - BOTTOM_BAR_H)
 #endif
 
+// --- Avatar/weather vertical layout -------------------------------------
+// The scene was authored for a 107px main pane (grass ground at y=106, pig top
+// row at y=40). On taller panes (Pancake MAIN_H=212) that leaves a big empty
+// gap between the grass and the bottom info bar, so shift every GROUND-anchored
+// coordinate down to seat the grass at the bottom of the pane. Sky elements
+// (clouds at y=2, birds, rain) stay top-anchored, so the sky grows and the
+// grass moves farther from the clouds. Shorter panes (MAIN_H<=107) get shift 0.
+#define SCENE_GROUND_SHIFT ((MAIN_H > 107) ? (MAIN_H - 107) : 0)
+#define SCENE_GROUND_Y     (106 + SCENE_GROUND_SHIFT)   // grass ground line
+#define SCENE_PIG_TOP_Y    (40  + SCENE_GROUND_SHIFT)   // pig ASCII top row
+
 // Theme structure
 struct PorkTheme {
     const char* name;
