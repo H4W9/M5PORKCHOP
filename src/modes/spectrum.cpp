@@ -30,17 +30,40 @@ const int SPECTRUM_LEFT = 20;       // Space for dB labels
 const int SPECTRUM_RIGHT = DISPLAY_W - 2;
 const int SPECTRUM_WIDTH = SPECTRUM_RIGHT - SPECTRUM_LEFT;
 const int SPECTRUM_TOP = 2;         // Top margin
-const int SPECTRUM_BOTTOM = 56;     // Lowered to give more vertical range
-const int WATERFALL_TOP = 58;       // Waterfall starts here
-const int WATERFALL_ROWS = 22;      // Number of history rows
-const int WATERFALL_BOTTOM = 80;    // WATERFALL_TOP + WATERFALL_ROWS
-const int CHANNEL_LABEL_Y = 82;     // Channel number row
-const int XP_BAR_Y = 94;            // Filter/status bar
+// Pin the label/status rows to the bottom of the pane, stack the waterfall
+// above them, and let the spectrum trace fill everything in between. On the
+// tall Pancake pane (MAIN_H=212) this uses the full height instead of just the
+// top ~94px; on V8/Cardputer (MAIN_H=107) it reproduces the original layout
+// exactly (56/58/22/80/82/94).
+const int XP_BAR_Y = MAIN_H - 13;                    // Filter/status bar (bottom)
+const int CHANNEL_LABEL_Y = XP_BAR_Y - 12;           // Channel number row
+const int WATERFALL_ROWS = (MAIN_H > 107) ? 30 : 22; // more history on the tall pane (buffer = ROWS x WIDTH BSS)
+const int WATERFALL_BOTTOM = CHANNEL_LABEL_Y - 2;    // just above channel labels
+const int WATERFALL_TOP = WATERFALL_BOTTOM - WATERFALL_ROWS;
+const int SPECTRUM_BOTTOM = WATERFALL_TOP - 2;       // trace fills down to the waterfall
 
 // RSSI scale
 const int8_t RSSI_MIN = -95;        // Bottom of scale (weak signals)
 const int8_t RSSI_MAX = -30;        // Top of scale (very strong)
 const int8_t NOISE_FLOOR_DB = -92;  // Simulated noise floor level (future)
+
+// RSSI heat-map color for the spectrum trace: red (strong) -> orange -> yellow
+// -> green (weak). Thresholds in dBm.
+static inline uint16_t rssiToColor(int8_t rssi) {
+    if (rssi >= -55) return 0xF800;  // red    (very strong)
+    if (rssi >= -68) return 0xFD20;  // orange (strong)
+    if (rssi >= -80) return 0xFFE0;  // yellow (moderate)
+    return 0x07E0;                   // green  (weak)
+}
+
+// Same heat map keyed on waterfall intensity (0-255, derived from RSSI). The
+// thresholds match rssiToColor's -55/-68/-80 dBm boundaries.
+static inline uint16_t intensityToColor(uint8_t intensity) {
+    if (intensity >= 157) return 0xF800;  // red
+    if (intensity >= 106) return 0xFD20;  // orange
+    if (intensity >= 59)  return 0xFFE0;  // yellow
+    return 0x07E0;                        // green
+}
 
 // View defaults
 const float DEFAULT_CENTER_MHZ = 2437.0f;  // Channel 6
@@ -1237,7 +1260,7 @@ void SpectrumMode::drawWaterfall(M5Canvas& canvas) {
                 }
                 
                 if (drawPixel) {
-                    canvas.drawPixel(SPECTRUM_LEFT + x, screenY, COLOR_FG);
+                    canvas.drawPixel(SPECTRUM_LEFT + x, screenY, intensityToColor(intensity));
                 }
             }
         }
@@ -1551,6 +1574,7 @@ void SpectrumMode::drawGaussianLobe(M5Canvas& canvas, float centerFreqMHz,
     int peakY = rssiToY(rssi);
     int baseY = SPECTRUM_BOTTOM;
     int lobeHeight = baseY - peakY;
+    uint16_t sigColor = rssiToColor(rssi);  // color-code this peak by its RSSI
     
     // Don't draw if peak is below baseline
     if (lobeHeight <= 0) return;
@@ -1622,13 +1646,13 @@ void SpectrumMode::drawGaussianLobe(M5Canvas& canvas, float centerFreqMHz,
             // Filled: draw vertical line from baseline to curve
             if (y < baseY) {
                 if (shimmerMod == 1 || ((uint8_t)(x + shimmerPhase) % shimmerMod) == 0) {
-                    canvas.drawFastVLine(x, y, baseY - y, COLOR_FG);
+                    canvas.drawFastVLine(x, y, baseY - y, sigColor);
                 }
             }
         } else {
             // Outline: connect to previous point
             if (prevValid && (prevY < baseY || y < baseY)) {
-                canvas.drawLine(prevX, prevY, x, y, COLOR_FG);
+                canvas.drawLine(prevX, prevY, x, y, sigColor);
             }
         }
         
@@ -1642,12 +1666,12 @@ void SpectrumMode::drawGaussianLobe(M5Canvas& canvas, float centerFreqMHz,
         // Left edge
         int leftEdgeY = baseY - (int)(lobeHeightMod * getSincAmplitude(startFreq - center));
         if (leftEdgeY < baseY) {
-            canvas.drawLine(leftX, baseY, leftX, leftEdgeY, COLOR_FG);
+            canvas.drawLine(leftX, baseY, leftX, leftEdgeY, sigColor);
         }
         // Right edge
         int rightEdgeY = baseY - (int)(lobeHeightMod * getSincAmplitude(endFreq - center));
         if (rightEdgeY < baseY) {
-            canvas.drawLine(rightX, rightEdgeY, rightX, baseY, COLOR_FG);
+            canvas.drawLine(rightX, rightEdgeY, rightX, baseY, sigColor);
         }
     }
 }
