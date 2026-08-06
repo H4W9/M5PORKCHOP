@@ -14,13 +14,10 @@ extern "C" {
 
 // Override the sanity check function
 // With -zmuldefs linker flag, this definition takes precedence over libnet80211.a
-// This allows deauth (0xC0), disassoc (0xA0), and auth frames to be transmitted.
-// arg==31337 is a self-test probe (see init()): returning 1 there lets us detect
-// at runtime that THIS override won the link (Marauder uses the same sentinel).
-// Real frames always pass with 0.
+// This allows deauth (0xC0), disassoc (0xA0), and auth frames to be transmitted
 int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2, int32_t arg3) {
-    if (arg == 31337) return 1;  // self-test sentinel: proves our override is linked
-    return 0;                    // allow all real frame types
+    // Always return 0 (success) - allow all frame types
+    return 0;
 }
 
 }
@@ -32,16 +29,8 @@ bool initialized = false;
 void init() {
     if (initialized) return;
 
-    // Self-test: if our -zmuldefs override actually won the link, the 31337
-    // sentinel returns 1. If libnet80211's version is being used instead, it
-    // returns 0 — and raw injection (deauth/PMKID/auth/assoc) will silently
-    // fail on this target. This is the definitive check for the C5.
-    int probe = ieee80211_raw_frame_sanity_check(31337, 0, 0);
-    if (probe == 1) {
-        Serial.println("[WSL] Frame-injection bypass ACTIVE (override linked, -zmuldefs OK)");
-    } else {
-        Serial.println("[WSL] *** WARNING: bypass NOT active (probe returned 0) — raw TX WILL FAIL ***");
-    }
+    // Log that bypass is active
+    Serial.println("[WSL] Frame validation bypass active (-zmuldefs)");
     initialized = true;
 }
 

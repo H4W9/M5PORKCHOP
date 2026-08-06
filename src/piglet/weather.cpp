@@ -52,7 +52,7 @@ static bool boltActive = false;              // bolt currently drawing itself in
 static uint32_t boltStartTime = 0;
 static const uint16_t BOLT_STRIKE_MS = 180;  // time for the bolt to reach the ground
 static uint8_t pendingStormFlashes = 0;      // flash count, held until the bolt lands
-static const uint8_t BOLT_POINTS = 6;
+static const uint8_t BOLT_POINTS = 9;   // more segments = jaggier, lightning-like
 static int16_t boltPathX[BOLT_POINTS];
 static int16_t boltPathY[BOLT_POINTS];
 static constexpr uint16_t BOLT_GOLD = 0xFEA0;  // golden yellow (RGB565)
@@ -530,10 +530,24 @@ static void spawnBolt() {
     boltImpactX = (float)strikeX;
     int16_t topY = 6;
     int16_t spanY = GROUND_Y - topY;
+    // Y stays evenly spaced + monotonic (the top-down reveal depends on it);
+    // the jaggedness comes from X zigzagging side to side. Swings are widest up
+    // top and taper toward the ground strike point, with per-point jitter so no
+    // two bolts look alike.
+    int8_t dir = (random(0, 2) == 0) ? -1 : 1;   // random starting side
     for (int i = 0; i < BOLT_POINTS; i++) {
         boltPathY[i] = topY + (int16_t)((int32_t)spanY * i / (BOLT_POINTS - 1));
         bool endpoint = (i == 0 || i == BOLT_POINTS - 1);
-        boltPathX[i] = strikeX + (endpoint ? 0 : (int16_t)random(-9, 10));
+        if (endpoint) {
+            boltPathX[i] = strikeX;                // start + ground point are fixed
+        } else {
+            dir = -dir;                            // alternate sides each segment
+            float taper = 1.0f - (float)i / (float)(BOLT_POINTS - 1);
+            int16_t amp = (int16_t)(5.0f + 11.0f * taper);  // ~5..16px, wider up top
+            boltPathX[i] = strikeX
+                         + (int16_t)(dir * (amp / 2 + (int16_t)random(0, amp / 2 + 1)))
+                         + (int16_t)random(-2, 3); // ragged edge
+        }
     }
     boltActive = true;
     boltStartTime = millis();

