@@ -1229,11 +1229,12 @@ void SpectrumMode::drawWaterfall(M5Canvas& canvas) {
     // Draw horizontal separator line above waterfall
     canvas.drawFastHLine(SPECTRUM_LEFT, WATERFALL_TOP - 1, SPECTRUM_WIDTH, COLOR_FG);
     
-    // Draw waterfall rows (oldest at top, newest at bottom)
+    // Draw waterfall rows: newest at the top (continuous with the live trace),
+    // scrolling downward as it ages — the way a waterfall should flow.
+    // waterfallWriteRow points to the NEXT (oldest) slot, so the newest frame is
+    // at waterfallWriteRow-1; count backwards from there for the top row.
     for (int row = 0; row < WATERFALL_ROWS; row++) {
-        // Calculate which buffer row to read (circular buffer)
-        // waterfallWriteRow points to NEXT write position, so oldest is at waterfallWriteRow
-        int bufRow = (waterfallWriteRow + row) % WATERFALL_ROWS;
+        int bufRow = (waterfallWriteRow - 1 - row + 2 * WATERFALL_ROWS) % WATERFALL_ROWS;
         int screenY = WATERFALL_TOP + row;
         
         // Draw each pixel in this row

@@ -11,14 +11,35 @@
 
 namespace Weather {
 
-// === CLOUD PARALLAX STATE ===
-static char cloudPattern[40] = {0};
-static bool cloudMoving = true;  // Always drift
-static bool cloudDirection = true;  // true = right
+// === CLOUD SHAPE SYSTEM ===
+// Clouds are clusters of overlapping circular "puffs" that grow in, drift
+// across the sky, then shrink away — proper cloud shapes, not a text strip.
+struct CloudPuff {
+    int8_t dx, dy;      // offset from cloud center
+    uint8_t radius;     // circle radius (px)
+};
+struct CloudShape {
+    float x;            // current X (float for smooth drift)
+    int8_t y;           // Y center of the cloud
+    uint8_t puffCount;  // 3-5 overlapping circles
+    CloudPuff puffs[5];
+    uint8_t scale;      // 0-255 growth animation (scales drawn radius)
+    bool active;
+    bool growing;
+    bool shrinking;
+};
+static const uint8_t MAX_CLOUDS = 8;
+static CloudShape clouds[MAX_CLOUDS];
 static uint32_t lastCloudUpdate = 0;
-static uint16_t cloudSpeed = 14400;  // Ultra slow atmospheric drift (matches sirloin)
+static const uint16_t cloudSpeed = 14400;  // Ultra slow atmospheric drift
 static uint32_t lastCloudParallax = 0;
-static const uint8_t CLOUD_PARALLAX_GRASS_SHIFTS = 6;  // Shift clouds every N grass shifts
+static const uint8_t CLOUD_PARALLAX_GRASS_SHIFTS = 6;
+static uint32_t lastDensityCheck = 0;
+static uint32_t lastScaleUpdate = 0;
+// Cloud X virtual wrap range (seamless scroll with edge ghosts), width-relative
+static const int CLOUD_WRAP_LO = -40;
+static const int CLOUD_WRAP_HI = DISPLAY_W + 40;
+static const int CLOUD_WRAP_SPAN = CLOUD_WRAP_HI - CLOUD_WRAP_LO;
 
 // === RAIN STATE ===
 struct RainDrop {
@@ -95,80 +116,97 @@ static uint32_t lastWindUpdate = 0;
 // === MOOD-BASED WEATHER CONTROL ===
 static int currentMood = 50;  // Cached mood level
 
-// Forward declaration
-static void resetCloudPattern();
-static void shiftCloudPattern(bool direction, bool allowMutation);
+// Forward declarations
+static void generateCloudPuffs(CloudShape& cloud);
+static void activateCloud();
+static void deactivateCloud();
 
 // === INITIALIZATION ===
 void init() {
-    // Init cloud pattern - scattered dots/dashes with spacing
-    resetCloudPattern();
-    
+    // All clouds start inactive
+    for (int i = 0; i < MAX_CLOUDS; i++) clouds[i].active = false;
+
     // Init wind particles (inactive)
     for (int i = 0; i < 6; i++) {
         windParticles[i].active = false;
     }
-    
+
     lastCloudUpdate = millis();
     lastCloudParallax = lastCloudUpdate;
+    lastDensityCheck = lastCloudUpdate;
+    lastScaleUpdate = lastCloudUpdate;
     lastWindGust = millis();
     lastThunderStorm = millis();
 }
 
-static void resetCloudPattern() {
-    // Generate textured cloud pattern with multi-segment clusters
-    const char cloudChars[] = {'.', '-', '_'};
-    
-    // Fill with spaces first
-    for (int i = 0; i < 39; i++) {
-        cloudPattern[i] = ' ';
+static void generateCloudPuffs(CloudShape& cloud) {
+    cloud.puffs[0] = {0, 0, (uint8_t)random(4, 6)};                                        // center anchor
+    cloud.puffs[1] = {(int8_t)random(-10, -5), (int8_t)random(1, 3), (uint8_t)random(3, 5)}; // left flank
+    cloud.puffs[2] = {(int8_t)random(6, 11),   (int8_t)random(1, 3), (uint8_t)random(3, 5)}; // right flank
+    cloud.puffCount = 3;
+    if (random(0, 100) < 70) {  // optional top puff
+        cloud.puffs[cloud.puffCount] = {(int8_t)random(-2, 3), (int8_t)random(-3, -1), (uint8_t)random(2, 4)};
+        cloud.puffCount++;
     }
-    cloudPattern[39] = '\0';
-    
-    int pos = 0;
-    while (pos < 36) {
-        // Create a cloud entity (2-4 segments for texture)
-        int segments = random(2, 5);
-        
-        for (int s = 0; s < segments && pos < 39; s++) {
-            char segChar = cloudChars[random(0, 3)];
-            int segLen = random(1, 6);  // 1 to 5 chars per segment
-            
-            for (int k = 0; k < segLen && pos < 39; k++) {
-                cloudPattern[pos++] = segChar;
-            }
-        }
-        
-        // Add gap between clouds
-        int gap = random(4, 10);  // 4 to 9 spaces
-        pos += gap;
+    if (cloud.puffCount < 5 && random(0, 100) < 50) {  // optional extra side puff
+        int8_t side = random(0, 2) ? (int8_t)12 : (int8_t)-12;
+        cloud.puffs[cloud.puffCount] = {(int8_t)(side + (int8_t)random(-2, 3)), (int8_t)random(0, 3), (uint8_t)random(2, 4)};
+        cloud.puffCount++;
     }
 }
 
-static void shiftCloudPattern(bool direction, bool allowMutation) {
-    if (direction) {
-        // Shift right
-        char last = cloudPattern[38];
-        for (int i = 38; i > 0; i--) {
-            cloudPattern[i] = cloudPattern[i - 1];
+static int getActiveCloudCount() {
+    int c = 0;
+    for (int i = 0; i < MAX_CLOUDS; i++) if (clouds[i].active) c++;
+    return c;
+}
+
+static int getTargetCloudCount() {
+    if (rainActive) return MAX_CLOUDS;              // full cover during rain
+    int target = (20 - currentMood) * 8 / 100;      // mood>=20 -> 0, mood<=-80 -> 8
+    if (target < 0) target = 0;
+    if (target > 8) target = 8;
+    return target;
+}
+
+static void activateCloud() {
+    int slot = -1;
+    for (int i = 0; i < MAX_CLOUDS; i++) if (!clouds[i].active) { slot = i; break; }
+    if (slot < 0) return;
+
+    // Pick a well-spaced X (best of 5 tries) so clouds don't clump
+    float bestX = (float)random(CLOUD_WRAP_LO, CLOUD_WRAP_HI + 1);
+    float bestDist = 0;
+    for (int attempt = 0; attempt < 5; attempt++) {
+        float tryX = (float)random(CLOUD_WRAP_LO, CLOUD_WRAP_HI + 1);
+        float minDist = (float)CLOUD_WRAP_SPAN;
+        for (int i = 0; i < MAX_CLOUDS; i++) {
+            if (i == slot || !clouds[i].active) continue;
+            float d = tryX - clouds[i].x; if (d < 0) d = -d;
+            if (d > CLOUD_WRAP_SPAN / 2) d = CLOUD_WRAP_SPAN - d;  // wrap distance
+            if (d < minDist) minDist = d;
         }
-        cloudPattern[0] = last;
-    } else {
-        // Shift left
-        char first = cloudPattern[0];
-        for (int i = 0; i < 38; i++) {
-            cloudPattern[i] = cloudPattern[i + 1];
-        }
-        cloudPattern[38] = first;
+        if (minDist > bestDist) { bestDist = minDist; bestX = tryX; }
     }
 
-    if (allowMutation && random(0, 50) == 0) {
-        int pos = random(0, 39);
-        if (cloudPattern[pos] != ' ') {
-            const char cloudChars[] = {'.', '-', '_'};
-            cloudPattern[pos] = cloudChars[random(0, 3)];
-        }
+    CloudShape& c = clouds[slot];
+    c.x = bestX;
+    c.y = (int8_t)random(6, 15);   // near the top; birds fly beneath
+    c.scale = 0;
+    c.active = true;
+    c.growing = true;
+    c.shrinking = false;
+    generateCloudPuffs(c);
+}
+
+static void deactivateCloud() {
+    float maxDist = -1; int pick = -1;
+    for (int i = 0; i < MAX_CLOUDS; i++) {
+        if (!clouds[i].active || clouds[i].shrinking) continue;
+        float d = clouds[i].x - (float)(DISPLAY_W / 2); if (d < 0) d = -d;
+        if (d > maxDist) { maxDist = d; pick = i; }
     }
+    if (pick >= 0) { clouds[pick].shrinking = true; clouds[pick].growing = false; }
 }
 
 // === WEATHER STATE CONTROL ===
@@ -466,22 +504,54 @@ void update() {
 }
 
 static void updateClouds(uint32_t now) {
-    if (cloudMoving && now - lastCloudUpdate >= cloudSpeed) {
+    // Slow atmospheric self-drift
+    if (now - lastCloudUpdate >= cloudSpeed) {
         lastCloudUpdate = now;
-        shiftCloudPattern(cloudDirection, true);
+        for (int i = 0; i < MAX_CLOUDS; i++) if (clouds[i].active) clouds[i].x += 0.5f;
     }
 
-    // Parallax: when grass is moving, nudge clouds in the same direction (slower).
+    // Parallax: nudge clouds with the grass (slower)
     if (Avatar::isGrassMoving()) {
         uint32_t parallaxInterval = (uint32_t)Avatar::getGrassSpeed() * CLOUD_PARALLAX_GRASS_SHIFTS;
         if (parallaxInterval < 150) parallaxInterval = 150;
-
         if (now - lastCloudParallax >= parallaxInterval) {
             lastCloudParallax = now;
-            shiftCloudPattern(Avatar::isGrassDirectionRight(), false);
+            float shift = Avatar::isGrassDirectionRight() ? 1.0f : -1.0f;
+            for (int i = 0; i < MAX_CLOUDS; i++) if (clouds[i].active) clouds[i].x += shift;
         }
     } else {
         lastCloudParallax = now;
+    }
+
+    // Wrap X within the virtual range
+    for (int i = 0; i < MAX_CLOUDS; i++) {
+        if (!clouds[i].active) continue;
+        if (clouds[i].x > CLOUD_WRAP_HI) clouds[i].x -= CLOUD_WRAP_SPAN;
+        if (clouds[i].x < CLOUD_WRAP_LO) clouds[i].x += CLOUD_WRAP_SPAN;
+    }
+
+    // Density: match active cloud count to mood every 2s
+    if (now - lastDensityCheck >= 2000) {
+        lastDensityCheck = now;
+        int target = getTargetCloudCount();
+        int active = getActiveCloudCount();
+        if (active < target) activateCloud();
+        else if (active > target) deactivateCloud();
+    }
+
+    // Grow-in / shrink-out animation every 80ms
+    if (now - lastScaleUpdate >= 80) {
+        lastScaleUpdate = now;
+        for (int i = 0; i < MAX_CLOUDS; i++) {
+            if (!clouds[i].active) continue;
+            if (clouds[i].growing) {
+                if (clouds[i].scale <= 240) clouds[i].scale += 15;
+                else { clouds[i].scale = 255; clouds[i].growing = false; }
+            } else if (clouds[i].shrinking) {
+                if (clouds[i].scale >= 15) clouds[i].scale -= 15;
+                else { clouds[i].scale = 0; clouds[i].active = false; clouds[i].shrinking = false; }
+            }
+        }
     }
 }
 
@@ -717,25 +787,36 @@ bool isRaining() {
 }
 
 // === DRAWING ===
-void drawClouds(M5Canvas& canvas, uint16_t colorFG) {
-    // During thunder flash, use inverted color (matches sirloin's getDrawColor)
-    uint16_t drawColor = isThunderFlashing() ? getColorBG() : colorFG;
 
-    // Fuller puffy clouds. The old version drew only a row of "._-" characters —
-    // the bottom wisps — so you never saw the cloud body. This draws a real
-    // cloud band driven by the same scrolling cloudPattern (each non-space
-    // column is a puff), lowered into the sky so more of it shows and the birds
-    // fly beneath it.
-    const int cellW = DISPLAY_W / 39;   // spread the 39 pattern columns across the pane
-    const int cloudTop = 12;            // lowered from y=2 (more sky above, birds below)
-    const int bodyH = 9;
-    for (int i = 0; i < 39; i++) {
-        if (cloudPattern[i] == ' ') continue;
-        int x = i * cellW;
-        if (x >= DISPLAY_W) break;
-        canvas.fillRect(x, cloudTop + 3, cellW, bodyH, drawColor);          // body
-        canvas.fillRect(x + 1, cloudTop, cellW - 2, 3, drawColor);          // puffy top
-        canvas.drawFastHLine(x, cloudTop + 3 + bodyH, cellW - 1, drawColor); // soft fringe
+// Pixel-art circle: 3-band stepped rectangle (blocky puff), matching the
+// chunky pixel-art look of the rest of the scene.
+static void drawPixelPuff(M5Canvas& canvas, int cx, int cy, int r, uint16_t color) {
+    if (r <= 1) { canvas.fillRect(cx - 1, cy - 1, 3, 3, color); return; }
+    int inset = (r + 1) / 2;
+    canvas.fillRect(cx - r, cy - r + inset, r * 2, r * 2 - inset * 2, color);        // center band
+    canvas.fillRect(cx - r + inset, cy - r, (r - inset) * 2, inset, color);          // top step
+    canvas.fillRect(cx - r + inset, cy + r - inset, (r - inset) * 2, inset, color);  // bottom step
+}
+
+void drawClouds(M5Canvas& canvas, uint16_t colorFG) {
+    // Storm clouds swell while raining; thunder flash inverts. Colour comes from
+    // the theme (getCloudColor()) so Realistic gets its sky-blue / storm-grey.
+    uint16_t drawColor = isThunderFlashing() ? getColorBG() : colorFG;
+    float rainBoost = rainActive ? 1.4f : 1.0f;
+
+    for (int i = 0; i < MAX_CLOUDS; i++) {
+        if (!clouds[i].active || clouds[i].scale == 0) continue;
+        float scaleFactor = (float)clouds[i].scale / 255.0f;
+        for (int p = 0; p < clouds[i].puffCount; p++) {
+            int r = (int)((float)clouds[i].puffs[p].radius * scaleFactor * rainBoost + 0.5f);
+            if (r < 1) continue;
+            int cx = (int)(clouds[i].x + clouds[i].puffs[p].dx);
+            int cy = clouds[i].y + clouds[i].puffs[p].dy;
+            drawPixelPuff(canvas, cx, cy, r, drawColor);
+            // Edge ghosts for seamless wrap-around
+            if (cx - r < 0)              drawPixelPuff(canvas, cx + CLOUD_WRAP_SPAN, cy, r, drawColor);
+            else if (cx + r > DISPLAY_W) drawPixelPuff(canvas, cx - CLOUD_WRAP_SPAN, cy, r, drawColor);
+        }
     }
 }
 

@@ -771,22 +771,23 @@ void Avatar::draw(M5Canvas& canvas) {
 // moon (pale yellow-white in Realistic). Sits top-right in the sky; clouds may
 // drift over it. Non-Realistic themes draw it in the foreground color.
 static void drawSunOrMoon(M5Canvas& canvas) {
+    if (Weather::isRaining()) return;   // overcast sky — no sun/moon while raining
     const bool real = realActive();
-    const int cx = DISPLAY_W - 26, cy = 20;   // top-right sky
+    const int cx = DISPLAY_W - 28, cy = 22;   // top-right sky
     if (Avatar::isNightTime()) {
         // Crescent: draw the full disc, then carve it with a BG-filled offset disc.
         uint16_t moonCol = real ? 0xFFF8 : getColorFG();  // pale yellow-white
-        canvas.fillCircle(cx, cy, 8, moonCol);
-        canvas.fillCircle(cx + 4, cy - 2, 8, getColorBG());
+        canvas.fillCircle(cx, cy, 10, moonCol);
+        canvas.fillCircle(cx + 5, cy - 3, 10, getColorBG());
     } else {
         uint16_t sunCol  = real ? 0xFFE0 : getColorFG();  // yellow
         uint16_t beamCol = real ? 0xFD20 : getColorFG();  // orange sunbeams
-        static const int8_t bx[8] = {11, 8, 0, -8, -11, -8, 0, 8};
-        static const int8_t by[8] = {0, 8, 11, 8, 0, -8, -11, -8};
+        static const int8_t bx[8] = {15, 11, 0, -11, -15, -11, 0, 11};
+        static const int8_t by[8] = {0, 11, 15, 11, 0, -11, -15, -11};
         for (int a = 0; a < 8; a++)
-            canvas.drawLine(cx + bx[a] * 7 / 11, cy + by[a] * 7 / 11,
+            canvas.drawLine(cx + bx[a] * 9 / 15, cy + by[a] * 9 / 15,
                             cx + bx[a], cy + by[a], beamCol);
-        canvas.fillCircle(cx, cy, 7, sunCol);
+        canvas.fillCircle(cx, cy, 9, sunCol);
     }
 }
 
