@@ -1097,16 +1097,23 @@ void Display::drawBottomBar() {
         const int gap = 4;
         int barX = (DISPLAY_W - barW) / 2;
 
-        // Draw heart icon (upright, black) instead of text label
+        // Realistic theme: red heart, green bar fill, black outline. Other
+        // themes keep the inverted single-colour (COLOR_BG) look.
+        bool real = isRealisticTheme();
+        uint16_t heartCol   = real ? REAL_FRUIT : COLOR_BG;  // apple red heart
+        uint16_t barFillCol = real ? REAL_GRASS : COLOR_BG;  // grass green fill
+        uint16_t barLineCol = real ? 0x0000     : COLOR_BG;  // black outline
+
+        // Draw heart icon (upright) instead of text label
         const int heartW = 9;
         int heartX = barX - gap - heartW;
         int heartY = 3;
-        drawHeartIcon(*bottomBar, heartX, heartY, COLOR_BG);
+        drawHeartIcon(*bottomBar, heartX, heartY, heartCol);
 
-        bottomBar->drawRect(barX, barY, barW, barH, COLOR_BG);
+        bottomBar->drawRect(barX, barY, barW, barH, barLineCol);
         int fillW = (barW - 2) * pct / 100;
         if (fillW > 0) {
-            bottomBar->fillRect(barX + 1, barY + 1, fillW, barH - 2, COLOR_BG);
+            bottomBar->fillRect(barX + 1, barY + 1, fillW, barH - 2, barFillCol);
         }
 
         char pctBuf[8];
@@ -2787,7 +2794,7 @@ void Display::drawModeInfo(M5Canvas& canvas, PorkchopMode mode) {
             snprintf(buf, sizeof(buf), "FOUND %d TRUFFLES", (int)networks.size());
             canvas.drawString(buf, 2, 14);
         } else {
-            canvas.drawString("HUNTING TRUFFLES", 2, MAIN_H / 2 - 5);
+            canvas.drawString("HUNTING TRUFFLES", 2, SCENE_PIG_TOP_Y - 16);  // just above the pig
         }
         
         // Show stats at bottom
