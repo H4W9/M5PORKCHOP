@@ -72,6 +72,8 @@ static uint32_t thunderMaxInterval = 90000;
 static bool boltActive = false;              // bolt currently drawing itself in
 static uint32_t boltStartTime = 0;
 static const uint16_t BOLT_STRIKE_MS = 180;  // time for the bolt to reach the ground
+static const uint16_t BOLT_HOLD_MS = 130;    // keep the FULL bolt on screen before flashing
+static bool boltLanded = false;              // bolt reached the ground, in the hold window
 static uint8_t pendingStormFlashes = 0;      // flash count, held until the bolt lands
 static const uint8_t BOLT_POINTS = 9;   // more segments = jaggier, lightning-like
 static int16_t boltPathX[BOLT_POINTS];
@@ -290,6 +292,7 @@ void setRaining(bool active) {
         lastThunderStorm = millis();
         // ...and any in-flight bolt strike, so it can't freeze mid-air either
         boltActive = false;
+        boltLanded = false;
         pendingStormFlashes = 0;
         boltExplosionActive = false;
         for (int s = 0; s < 6; s++) boltSplashes[s].active = false;
@@ -646,6 +649,7 @@ static void spawnBolt() {
         }
     }
     boltActive = true;
+    boltLanded = false;
     boltStartTime = millis();
 }
 
@@ -663,25 +667,36 @@ static void updateThunder(uint32_t now) {
         }
     }
 
-    // Animate the bolt strike; once it reaches the grass, bloom the impact
-    // and hand off to the flash sequence below.
-    if (boltActive && now - boltStartTime >= BOLT_STRIKE_MS) {
-        boltActive = false;
-        boltExplosionActive = true;
-        boltExplosionRadius = 0;
-        boltExplosionMaxRadius = (uint8_t)random(10, 14);
-        boltExplosionLife = 12;
-        int splashed = 0;
-        for (int s = 0; s < 6 && splashed < 4; s++) if (!boltSplashes[s].active) {
-            boltSplashes[s].x = boltImpactX + (float)random(-6, 7);
-            boltSplashes[s].y = (float)GROUND_Y;
-            boltSplashes[s].vx = (float)random(-30, 31) / 10.0f;
-            boltSplashes[s].vy = -1.0f - (float)random(0, 16) / 10.0f;
-            boltSplashes[s].life = (uint8_t)random(12, 19);
-            boltSplashes[s].active = true; splashed++;
+    // Animate the bolt strike. When it reaches the grass, bloom the impact ONCE
+    // but keep the fully-revealed bolt drawn through a short hold window so it's
+    // clearly visible BEFORE the flash — then release the flash. (Deactivating
+    // the bolt on the same frame it completed meant the finished bolt was never
+    // drawn and the flash appeared to fire with no bolt.)
+    if (boltActive) {
+        uint32_t elapsed = now - boltStartTime;
+        if (!boltLanded && elapsed >= BOLT_STRIKE_MS) {
+            boltLanded = true;
+            boltExplosionActive = true;
+            boltExplosionRadius = 0;
+            boltExplosionMaxRadius = (uint8_t)random(10, 14);
+            boltExplosionLife = 12;
+            int splashed = 0;
+            for (int s = 0; s < 6 && splashed < 4; s++) if (!boltSplashes[s].active) {
+                boltSplashes[s].x = boltImpactX + (float)random(-6, 7);
+                boltSplashes[s].y = (float)GROUND_Y;
+                boltSplashes[s].vx = (float)random(-30, 31) / 10.0f;
+                boltSplashes[s].vy = -1.0f - (float)random(0, 16) / 10.0f;
+                boltSplashes[s].life = (uint8_t)random(12, 19);
+                boltSplashes[s].active = true; splashed++;
+            }
         }
-        thunderFlashesRemaining = pendingStormFlashes;
-        pendingStormFlashes = 0;
+        // Hold the full bolt on screen, then clear it and fire the flash.
+        if (boltLanded && elapsed >= (uint32_t)BOLT_STRIKE_MS + BOLT_HOLD_MS) {
+            boltActive = false;
+            boltLanded = false;
+            thunderFlashesRemaining = pendingStormFlashes;
+            pendingStormFlashes = 0;
+        }
     }
 
     // Animate the impact bloom + splash independently of the bolt/flash state.
