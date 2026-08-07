@@ -47,22 +47,23 @@ const int8_t RSSI_MIN = -95;        // Bottom of scale (weak signals)
 const int8_t RSSI_MAX = -30;        // Top of scale (very strong)
 const int8_t NOISE_FLOOR_DB = -92;  // Simulated noise floor level (future)
 
-// RSSI heat-map color for the spectrum trace: red (strong) -> orange -> yellow
-// -> green (weak). Thresholds in dBm.
+// RSSI heat-map color for the spectrum trace: green (closest/strongest) ->
+// yellow -> orange -> red (farthest/weakest). Thresholds in dBm.
 static inline uint16_t rssiToColor(int8_t rssi) {
-    if (rssi >= -55) return 0xF800;  // red    (very strong)
-    if (rssi >= -68) return 0xFD20;  // orange (strong)
-    if (rssi >= -80) return 0xFFE0;  // yellow (moderate)
-    return 0x07E0;                   // green  (weak)
+    if (rssi >= -55) return 0x07E0;  // green  (closest / very strong)
+    if (rssi >= -68) return 0xFFE0;  // yellow (strong)
+    if (rssi >= -80) return 0xFD20;  // orange (moderate)
+    return 0xF800;                   // red    (farthest / weak)
 }
 
 // Same heat map keyed on waterfall intensity (0-255, derived from RSSI). The
-// thresholds match rssiToColor's -55/-68/-80 dBm boundaries.
+// thresholds match rssiToColor's -55/-68/-80 dBm boundaries. High intensity =
+// close/strong = green; low intensity = far/weak = red.
 static inline uint16_t intensityToColor(uint8_t intensity) {
-    if (intensity >= 157) return 0xF800;  // red
-    if (intensity >= 106) return 0xFD20;  // orange
-    if (intensity >= 59)  return 0xFFE0;  // yellow
-    return 0x07E0;                        // green
+    if (intensity >= 157) return 0x07E0;  // green (closest / strong)
+    if (intensity >= 106) return 0xFFE0;  // yellow
+    if (intensity >= 59)  return 0xFD20;  // orange
+    return 0xF800;                        // red (farthest / weak)
 }
 
 // View defaults

@@ -193,19 +193,14 @@ void DoNoHamMode::start() {
     incompleteHandshakes.clear();
     incompleteHandshakes.shrink_to_fit();
 
-    // Reserve memory for captures
-    size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    if (largest >= (sizeof(CapturedPMKID) * 8 + HeapPolicy::kReserveSlackSmall)) {
-        pmkids.reserve(8);
-    }
-    largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    if (largest >= (sizeof(CapturedHandshake) * 4 + HeapPolicy::kReserveSlackLarge)) {
-        handshakes.reserve(4);
-    }
-    largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    if (largest >= (sizeof(IncompleteHS) * 8 + HeapPolicy::kReserveSlackSmall)) {
-        incompleteHandshakes.reserve(8);
-    }
+    // Reserve full capacity up-front (matches the OINK fix). Each
+    // CapturedHandshake is ~3.3KB, so reserve(DNH_MAX_HANDSHAKES) is a single
+    // ~82KB allocation that routes to PSRAM (>16KB threshold) — keeping handshake
+    // storage out of scarce internal SRAM and letting push_back succeed without
+    // reallocation. PMKIDs/incomplete entries are tiny; reserving MAX is cheap.
+    handshakes.reserve(DNH_MAX_HANDSHAKES);
+    pmkids.reserve(DNH_MAX_PMKIDS);
+    incompleteHandshakes.reserve(DNH_MAX_HANDSHAKES);
     
     // Initialize channel stats
     for (int i = 0; i < 13; i++) {
@@ -1330,26 +1325,16 @@ int DoNoHamMode::findOrCreateHandshake(const uint8_t* bssid, const uint8_t* stat
     }
     // Create new
     if (handshakes.size() < DNH_MAX_HANDSHAKES) {
-        // Pressure gate: block new handshakes at Warning+ (aggressive shedding)
-        if (HeapHealth::getPressureLevel() >= HeapPressureLevel::Warning) {
+        // No internal-heap pressure gate (matches the OINK fix): the handshakes
+        // vector is reserved to capacity up-front so its storage lives in PSRAM,
+        // and gating on internal SRAM pressure silently dropped every capture on
+        // the ESP32-C5 (free SRAM hovers near the Warning line). Total-free
+        // (incl. PSRAM) remains a real out-of-memory guard.
+        size_t totalFree = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+        if (totalFree < HeapPolicy::kMinHeapForHandshakeAdd) {
             return -1;
         }
-        // Check free heap before attempting allocation
-        size_t freeHeap = ESP.getFreeHeap();
-        if (freeHeap < HeapPolicy::kMinHeapForHandshakeAdd) {
-            Serial.printf("[DNH] Handshake add blocked: low heap (%u)\n", freeHeap);
-            return -1;
-        }
-        
-        // Check largest contiguous block if vector needs to grow
-        if (handshakes.size() >= handshakes.capacity()) {
-            size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-            if (largest < DNH_HANDSHAKE_ALLOC_MIN_BLOCK) {
-                Serial.printf("[DNH] Handshake add blocked: fragmented heap (largest=%u)\n", largest);
-                return -1;
-            }
-        }
-        
+
         // Prepare handshake struct before push to minimize exception window
         CapturedHandshake hs = {};
         memcpy(hs.bssid, bssid, 6);
