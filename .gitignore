@@ -19,3 +19,11 @@ compile_commands.json
 scripts/heap_analyzer.py
 *.ski*
 !./docs/images/*
+
+# Local build artifacts (PlatformIO / pioarduino / ESP-IDF component manager)
+.dummy/
+managed_components/
+dependencies.lock
+sdkconfig
+sdkconfig.*
+!sdkconfig.defaults

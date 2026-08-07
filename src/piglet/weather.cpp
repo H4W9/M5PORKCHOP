@@ -55,6 +55,15 @@ static uint8_t pendingStormFlashes = 0;      // flash count, held until the bolt
 static const uint8_t BOLT_POINTS = 9;   // more segments = jaggier, lightning-like
 static int16_t boltPathX[BOLT_POINTS];
 static int16_t boltPathY[BOLT_POINTS];
+// Branches: short forks off the main channel that make it read as real
+// lightning instead of a single tidy line.
+static const uint8_t BOLT_BRANCHES = 2;
+static const uint8_t BRANCH_LEN = 3;
+static int16_t branchOX[BOLT_BRANCHES], branchOY[BOLT_BRANCHES];  // fork origin on main channel
+static int16_t branchX[BOLT_BRANCHES][BRANCH_LEN];
+static int16_t branchY[BOLT_BRANCHES][BRANCH_LEN];
+static uint8_t branchLen[BOLT_BRANCHES];   // 1..BRANCH_LEN — varied so some forks just stop short
+static bool    branchLive[BOLT_BRANCHES];
 static constexpr uint16_t BOLT_GOLD = 0xFEA0;  // golden yellow (RGB565)
 static float boltImpactX = 0.0f;
 
@@ -287,7 +296,7 @@ static void spawnBird() {
     for (int i = 0; i < 2; i++) if (!birds[i].active) { slot = i; break; }
     if (slot < 0) return;
     SkyBird& b = birds[slot];
-    b.y = (int8_t)random(3, 15);
+    b.y = (int8_t)random(26, 44);   // fly just beneath the cloud band (bottom ~24)
     b.sinePhase = 0; b.active = true; b.falling = false;
     bool goRight = random(0, 2) == 0;
     b.vx = goRight ? (int8_t)random(1, 3) : (int8_t)random(-2, 0);
@@ -528,25 +537,42 @@ static int16_t computeBoltStrikeX() {
 static void spawnBolt() {
     int16_t strikeX = computeBoltStrikeX();
     boltImpactX = (float)strikeX;
-    int16_t topY = 6;
-    int16_t spanY = GROUND_Y - topY;
-    // Y stays evenly spaced + monotonic (the top-down reveal depends on it);
-    // the jaggedness comes from X zigzagging side to side. Swings are widest up
-    // top and taper toward the ground strike point, with per-point jitter so no
-    // two bolts look alike.
-    int8_t dir = (random(0, 2) == 0) ? -1 : 1;   // random starting side
-    for (int i = 0; i < BOLT_POINTS; i++) {
-        boltPathY[i] = topY + (int16_t)((int32_t)spanY * i / (BOLT_POINTS - 1));
-        bool endpoint = (i == 0 || i == BOLT_POINTS - 1);
-        if (endpoint) {
-            boltPathX[i] = strikeX;                // start + ground point are fixed
+    const int16_t topY = 6;
+    const int16_t spanY = GROUND_Y - topY;
+
+    // --- Main channel: an irregular downward random walk ---
+    // Real lightning doesn't zigzag on a metronome. Each step takes a fresh
+    // random horizontal jump (which can repeat direction, unlike a zigzag),
+    // gently pulled back toward the ground strike point so it converges, over
+    // uneven vertical spacing. Y stays monotonic so the top-down reveal works.
+    boltPathX[0] = strikeX + (int16_t)random(-16, 17);   // cloud exit point
+    boltPathY[0] = topY;
+    for (int i = 1; i < BOLT_POINTS; i++) {
+        int16_t evenY = topY + (int16_t)((int32_t)spanY * i / (BOLT_POINTS - 1));
+        boltPathY[i] = (i < BOLT_POINTS - 1) ? evenY + (int16_t)random(-5, 6) : GROUND_Y;
+        if (boltPathY[i] <= boltPathY[i - 1]) boltPathY[i] = boltPathY[i - 1] + 2;
+        if (i == BOLT_POINTS - 1) {
+            boltPathX[i] = strikeX;                       // land on the strike point
         } else {
-            dir = -dir;                            // alternate sides each segment
-            float taper = 1.0f - (float)i / (float)(BOLT_POINTS - 1);
-            int16_t amp = (int16_t)(5.0f + 11.0f * taper);  // ~5..16px, wider up top
-            boltPathX[i] = strikeX
-                         + (int16_t)(dir * (amp / 2 + (int16_t)random(0, amp / 2 + 1)))
-                         + (int16_t)random(-2, 3); // ragged edge
+            int16_t pull = (int16_t)((strikeX - boltPathX[i - 1]) / 3);   // converge
+            boltPathX[i] = boltPathX[i - 1] + pull + (int16_t)random(-14, 15);
+        }
+    }
+
+    // --- Branches: short forks off the upper half of the channel ---
+    for (uint8_t b = 0; b < BOLT_BRANCHES; b++) {
+        uint8_t o = (uint8_t)random(1, BOLT_POINTS / 2 + 1);  // fork high, room to spread
+        branchOX[b] = boltPathX[o];
+        branchOY[b] = boltPathY[o];
+        int16_t px = branchOX[b], py = branchOY[b];
+        int8_t sideDir = (random(0, 2) == 0) ? -1 : 1;        // veer left or right
+        branchLive[b] = true;
+        branchLen[b] = (uint8_t)random(1, BRANCH_LEN + 1);    // some forks just stop short
+        for (uint8_t k = 0; k < branchLen[b]; k++) {
+            px += (int16_t)(sideDir * (int16_t)random(6, 16)); // out to the side
+            py += (int16_t)random(6, 14);                      // and downward
+            branchX[b][k] = px;
+            branchY[b][k] = py;
         }
     }
     boltActive = true;
@@ -694,14 +720,23 @@ bool isRaining() {
 void drawClouds(M5Canvas& canvas, uint16_t colorFG) {
     // During thunder flash, use inverted color (matches sirloin's getDrawColor)
     uint16_t drawColor = isThunderFlashing() ? getColorBG() : colorFG;
-    
-    canvas.setTextSize(2);
-    canvas.setTextColor(drawColor);
-    canvas.setTextDatum(top_left);
-    
-    // Draw in sky below top bar, above pig's head
-    int cloudY = 2;  // Near top of main canvas
-    canvas.drawString(cloudPattern, 0, cloudY);
+
+    // Fuller puffy clouds. The old version drew only a row of "._-" characters —
+    // the bottom wisps — so you never saw the cloud body. This draws a real
+    // cloud band driven by the same scrolling cloudPattern (each non-space
+    // column is a puff), lowered into the sky so more of it shows and the birds
+    // fly beneath it.
+    const int cellW = DISPLAY_W / 39;   // spread the 39 pattern columns across the pane
+    const int cloudTop = 12;            // lowered from y=2 (more sky above, birds below)
+    const int bodyH = 9;
+    for (int i = 0; i < 39; i++) {
+        if (cloudPattern[i] == ' ') continue;
+        int x = i * cellW;
+        if (x >= DISPLAY_W) break;
+        canvas.fillRect(x, cloudTop + 3, cellW, bodyH, drawColor);          // body
+        canvas.fillRect(x + 1, cloudTop, cellW - 2, 3, drawColor);          // puffy top
+        canvas.drawFastHLine(x, cloudTop + 3 + bodyH, cellW - 1, drawColor); // soft fringe
+    }
 }
 
 // Blocky Bresenham line, thickened by one extra column, matching the game's
@@ -743,6 +778,26 @@ static void drawBoltImpl(M5Canvas& canvas) {
                 int16_t midX = x1 + (int16_t)((float)(x2 - x1) * segT);
                 drawBoltLine(canvas, x1, y1, midX, revealY, BOLT_GOLD);
                 break;
+            }
+        }
+
+        // Branches: draw each fork once the main channel's reveal has passed
+        // its origin, clipped to the reveal line so they grow in with the bolt.
+        for (uint8_t b = 0; b < BOLT_BRANCHES; b++) {
+            if (!branchLive[b] || branchOY[b] >= revealY) continue;
+            int16_t bx = branchOX[b], by = branchOY[b];
+            for (uint8_t k = 0; k < branchLen[b]; k++) {
+                if (by >= revealY) break;
+                int16_t nx = branchX[b][k], ny = branchY[b][k];
+                if (ny <= revealY) {
+                    drawBoltLine(canvas, bx, by, nx, ny, BOLT_GOLD);
+                } else {
+                    float segT = (ny > by) ? (float)(revealY - by) / (float)(ny - by) : 0.0f;
+                    int16_t mx = bx + (int16_t)((float)(nx - bx) * segT);
+                    drawBoltLine(canvas, bx, by, mx, revealY, BOLT_GOLD);
+                    break;
+                }
+                bx = nx; by = ny;
             }
         }
     }

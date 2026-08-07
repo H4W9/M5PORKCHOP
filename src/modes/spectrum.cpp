@@ -37,7 +37,7 @@ const int SPECTRUM_TOP = 2;         // Top margin
 // exactly (56/58/22/80/82/94).
 const int XP_BAR_Y = MAIN_H - 13;                    // Filter/status bar (bottom)
 const int CHANNEL_LABEL_Y = XP_BAR_Y - 12;           // Channel number row
-const int WATERFALL_ROWS = (MAIN_H > 107) ? 30 : 22; // more history on the tall pane (buffer = ROWS x WIDTH BSS)
+const int WATERFALL_ROWS = (MAIN_H > 107) ? 44 : 22; // more history on the tall pane (buffer = ROWS x WIDTH BSS)
 const int WATERFALL_BOTTOM = CHANNEL_LABEL_Y - 2;    // just above channel labels
 const int WATERFALL_TOP = WATERFALL_BOTTOM - WATERFALL_ROWS;
 const int SPECTRUM_BOTTOM = WATERFALL_TOP - 2;       // trace fills down to the waterfall

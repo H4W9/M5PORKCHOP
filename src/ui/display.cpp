@@ -2794,7 +2794,7 @@ void Display::drawModeInfo(M5Canvas& canvas, PorkchopMode mode) {
             snprintf(buf, sizeof(buf), "FOUND %d TRUFFLES", (int)networks.size());
             canvas.drawString(buf, 2, 14);
         } else {
-            canvas.drawString("HUNTING TRUFFLES", 2, MAIN_H / 2 - 5);
+            canvas.drawString("HUNTING TRUFFLES", 2, SCENE_PIG_TOP_Y - 16);  // just above the pig
         }
         
         // Show stats at bottom

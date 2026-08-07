@@ -481,7 +481,9 @@ void Avatar::drawWaveRipples(M5Canvas& canvas, bool faceRight, int startX, int s
     const uint8_t  COUNT    = outgoing ? 5 : waveIntensity;
     const uint16_t CYCLE_MS = 3600;
     const int16_t  R_MIN    = 0;
-    const int16_t  R_MAX    = 130;
+    // Reach from the pig's nose to the top of the pane so waves can sweep the
+    // birds even on the tall Pancake pane (pig sits ~105px lower there).
+    const int16_t  R_MAX    = (SCENE_GROUND_Y > 130) ? SCENE_GROUND_Y : 130;
     const int16_t  MAX_PX_X = DISPLAY_W - PX;
     const int16_t  MAX_PX_Y = MAIN_H - PX;
     const int16_t  GRID_STEPS = (R_MAX - R_MIN) / PX;
@@ -531,7 +533,7 @@ bool Avatar::checkBirdWaveCollision(int16_t bx, int16_t by) {
     int waveCY = SCENE_PIG_TOP_Y + 31;  // nominal pig nose height
     uint32_t elapsed = now - waveBurstStart;
     const uint16_t CYCLE_MS = 3600;
-    const int16_t R_MAX = 130;
+    const int16_t R_MAX = (SCENE_GROUND_Y > 130) ? SCENE_GROUND_Y : 130;  // reach birds up top
     const uint8_t COUNT = 5;
     int32_t dx = (int32_t)bx - waveCX, dy = (int32_t)by - waveCY;
     int32_t dist2 = dx * dx + dy * dy;
@@ -765,10 +767,34 @@ void Avatar::draw(M5Canvas& canvas) {
     drawFrame(canvas, frame, 3, shouldBlink, facingRight, isSniffing);
 }
 
+// Daytime sun (yellow disc + orange sunbeams in Realistic) or a night crescent
+// moon (pale yellow-white in Realistic). Sits top-right in the sky; clouds may
+// drift over it. Non-Realistic themes draw it in the foreground color.
+static void drawSunOrMoon(M5Canvas& canvas) {
+    const bool real = realActive();
+    const int cx = DISPLAY_W - 26, cy = 20;   // top-right sky
+    if (Avatar::isNightTime()) {
+        // Crescent: draw the full disc, then carve it with a BG-filled offset disc.
+        uint16_t moonCol = real ? 0xFFF8 : getColorFG();  // pale yellow-white
+        canvas.fillCircle(cx, cy, 8, moonCol);
+        canvas.fillCircle(cx + 4, cy - 2, 8, getColorBG());
+    } else {
+        uint16_t sunCol  = real ? 0xFFE0 : getColorFG();  // yellow
+        uint16_t beamCol = real ? 0xFD20 : getColorFG();  // orange sunbeams
+        static const int8_t bx[8] = {11, 8, 0, -8, -11, -8, 0, 8};
+        static const int8_t by[8] = {0, 8, 11, 8, 0, -8, -11, -8};
+        for (int a = 0; a < 8; a++)
+            canvas.drawLine(cx + bx[a] * 7 / 11, cy + by[a] * 7 / 11,
+                            cx + bx[a], cy + by[a], beamCol);
+        canvas.fillCircle(cx, cy, 7, sunCol);
+    }
+}
+
 void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool blink, bool faceRight, bool sniff) {
     // Star system background layer (behind pig)
     updateStars();
     drawStars(canvas);
+    drawSunOrMoon(canvas);
     fillPigBoundingBox(canvas);
     // NOTE: the fruit tree is now drawn AFTER the pig (below) so the pig doesn't
     // block it — the pig stands behind the tree and shakes it.
@@ -1198,7 +1224,7 @@ void Avatar::drawGrass(M5Canvas& canvas) {
             p.x = (float)(currentX + 88 + random(0, 20));
             p.vx = 1.0f + (float)random(0, 20) / 10.0f;
         }
-        p.y = (float)(96 + random(0, 10));
+        p.y = (float)(SCENE_GROUND_Y - 10 + random(0, 10));  // kick dust up off the grass
         p.vy = -(0.2f + (float)random(0, 10) / 20.0f);
         p.startX = p.x;
         p.maxDist = 30.0f + (float)random(0, 31);
@@ -2010,7 +2036,7 @@ void Avatar::drawTree(M5Canvas& canvas) {
                 FruitSplash& sp = fruitSplashes[fruitSplashIdx];
                 fruitSplashIdx = (fruitSplashIdx + 1) % FRUIT_SPLASH_COUNT;
                 sp.x = (float)droppingFruits[i].x;
-                sp.y = 104.0f;
+                sp.y = (float)(SCENE_GROUND_Y - 2);
                 sp.vx = ((float)(esp_random() % 600) - 300.0f) / 100.0f;
                 sp.vy = -2.0f - (float)(esp_random() % 300) / 100.0f;
                 sp.size = 1 + (uint8_t)(esp_random() % (droppingFruits[i].radius / 2 + 1));
