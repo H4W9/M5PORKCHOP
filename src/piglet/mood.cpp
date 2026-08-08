@@ -1858,14 +1858,22 @@ void Mood::onLowBattery() {
 
 // Helper: get current hour from RTC or Unix time (same fallback as Avatar::isNightTime)
 static int8_t getCurrentHour() {
+    int8_t tzOffset = Config::gps().timezoneOffset;
+
     auto dt = M5.Rtc.getDateTime();
     if (dt.date.year >= 2024) {
-        return (int8_t)dt.time.hours;
+        int hour = (int)dt.time.hours + tzOffset;
+        if (hour >= 24) hour -= 24;
+        if (hour < 0) hour += 24;
+        return (int8_t)hour;
     }
     time_t unixNow = time(nullptr);
     if (unixNow >= 1700000000) {
+        // Apply configured tz offset the same way GPS::getTimeString does,
+        // rather than localtime_r (which uses the build's TZ, not the config).
+        unixNow += (int32_t)tzOffset * 3600;
         struct tm timeinfo;
-        localtime_r(&unixNow, &timeinfo);
+        gmtime_r(&unixNow, &timeinfo);
         return (int8_t)timeinfo.tm_hour;
     }
     return -1;  // Unknown
