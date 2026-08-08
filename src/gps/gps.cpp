@@ -5,6 +5,19 @@
 #include "../core/sdlog.h"
 #include "../piglet/mood.h"
 #include "../ui/display.h"
+#include <sys/time.h>   // settimeofday — sync the system clock from GPS UTC
+
+// Days since 1970-01-01 for a civil (UTC) Y/M/D (Howard Hinnant's algorithm).
+// Portable UTC->unix without relying on timegm/TZ. Used to set the system clock
+// from GPS so day/night (moon/stars vs sun) works without PigSync.
+static long daysFromCivil(int y, unsigned m, unsigned d) {
+    y -= (m <= 2);
+    long era = (y >= 0 ? y : y - 399) / 400;
+    unsigned yoe = (unsigned)(y - era * 400);
+    unsigned doy = (153u * (m + (m > 2 ? -3u : 9u)) + 2u) / 5u + d - 1u;
+    unsigned doe = yoe * 365u + yoe / 4u - yoe / 100u + doy;
+    return era * 146097L + (long)doe - 719468L;
+}
 
 // Pancake (ESP32-C5) GPS is on UART1. ESP RX = GPIO14, ESP TX = GPIO13.
 // ESP32Marauder MARAUDER_PANCAKE names its macros from the GPS module's side
@@ -202,7 +215,25 @@ void GPS::processSerial() {
 
 void GPS::updateData() {
     if (mutex == nullptr) return;  // FIX: Prevent crash if GPS not initialized
-    
+
+    // Sync the system clock from GPS UTC so day/night (moon/stars vs sun) works
+    // without needing PigSync. GPS gives UTC; isNightTime()/getTimeString() apply
+    // the user's timezoneOffset. Re-sync every 10 min to correct RTC drift.
+    if (gps->time.isValid() && gps->date.isValid() && gps->date.year() >= 2024) {
+        static uint32_t lastClockSync = 0;
+        uint32_t nowMs = millis();
+        if (lastClockSync == 0 || nowMs - lastClockSync > 600000UL) {
+            long days = daysFromCivil(gps->date.year(), gps->date.month(), gps->date.day());
+            time_t utc = (time_t)days * 86400L + gps->time.hour() * 3600
+                       + gps->time.minute() * 60 + gps->time.second();
+            struct timeval tv;
+            tv.tv_sec = utc;
+            tv.tv_usec = 0;
+            settimeofday(&tv, nullptr);
+            lastClockSync = nowMs;
+        }
+    }
+
     // Get current GPS data safely
     bool valid = gps->location.isValid();
     double latitude = gps->location.lat();
