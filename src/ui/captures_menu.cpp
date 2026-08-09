@@ -4,6 +4,7 @@
 #include <M5Cardputer.h>
 #include <SD.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <time.h>
 #include <ctype.h>
 #include <string.h>
@@ -1012,8 +1013,13 @@ bool CapturesMenu::connectToWiFi() {
     
     Serial.printf("[CAPTURES] Connecting to WiFi: %s\n", ssid);
     strncpy(syncStatusText, "CONNECTING WIFI...", sizeof(syncStatusText) - 1);
-    
+
+    // Leave monitor mode from any prior scan; allow 5 GHz join on the dual-band C5.
+    esp_wifi_set_promiscuous(false);
     WiFi.mode(WIFI_STA);
+#ifdef PORKCHOP_PANCAKE
+    esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
+#endif
     WiFi.begin(ssid, password);
     
     unsigned long startTime = millis();

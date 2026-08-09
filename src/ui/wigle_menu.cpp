@@ -4,6 +4,7 @@
 #include <M5Cardputer.h>
 #include <SD.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <string.h>
 #include "display.h"
 #include "../web/wigle.h"
@@ -623,8 +624,15 @@ bool WigleMenu::connectToWiFi() {
     
     Serial.printf("[WIGLE_MENU] Connecting to WiFi: %s\n", ssid);
     strncpy(syncStatusText, "CONNECTING WIFI...", sizeof(syncStatusText) - 1);
-    
+
+    // Make sure we're not still in promiscuous/monitor mode from a prior scan or
+    // wardrive — a STA join times out if the radio is still sniffing packets.
+    esp_wifi_set_promiscuous(false);
     WiFi.mode(WIFI_STA);
+#ifdef PORKCHOP_PANCAKE
+    // ESP32-C5 is dual-band: allow joining a 5 GHz AP (and 2.4 GHz).
+    esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
+#endif
     WiFi.begin(ssid, password);
     
     unsigned long startTime = millis();

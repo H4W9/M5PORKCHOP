@@ -21,6 +21,7 @@
 #include "../ui/sd_format_menu.h"
 #include "../piglet/mood.h"
 #include "../piglet/avatar.h"
+#include "../piglet/weather.h"
 #include "../modes/oink.h"
 #include "heap_policy.h"
 #include "../modes/donoham.h"
@@ -752,6 +753,14 @@ void Porkchop::handleInput() {
         if (!Display::isSnapping()) {
             Display::takeScreenshot();
         }
+        return;
+    }
+
+    // Easter egg: 'z' summons a lightning bolt — but only while it's raining
+    // (triggerBolt no-ops otherwise). 'z' stays a normal, un-highlighted key.
+    if ((M5Cardputer.Keyboard.isKeyPressed('z') || M5Cardputer.Keyboard.isKeyPressed('Z'))
+        && Weather::isRaining()) {
+        Weather::triggerBolt();
         return;
     }
 

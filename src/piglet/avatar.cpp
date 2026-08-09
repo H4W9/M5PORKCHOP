@@ -796,8 +796,10 @@ void Avatar::drawFrame(M5Canvas& canvas, const char** frame, uint8_t lines, bool
     // Star system background layer (behind pig)
     updateStars();
     drawStars(canvas);
-    drawSunOrMoon(canvas);
     fillPigBoundingBox(canvas);
+    // Sun/moon AFTER the pig's background box so the box never erases it
+    // (the moon sits high in the sky, above the pig, so nothing covers it).
+    drawSunOrMoon(canvas);
     // NOTE: the fruit tree is now drawn AFTER the pig (below) so the pig doesn't
     // block it — the pig stands behind the tree and shakes it.
 
@@ -1367,8 +1369,8 @@ void Avatar::fillPigBoundingBox(M5Canvas& canvas) {
 
     int boxX = currentX - 25;
     int boxW = 155;  // covers tail + 7 chars + margin
-    int boxY = 28;   // base y (40) minus jump headroom (12)
-    int boxH = 84;   // down to the grass line (~112)
+    int boxY = 28 + SCENE_GROUND_SHIFT;  // follows the pig down on tall panes
+    int boxH = 84;   // down to the grass line
 
     // Clamp to screen
     if (boxX < 0) { boxW += boxX; boxX = 0; }

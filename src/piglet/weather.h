@@ -16,6 +16,10 @@ void setMoodLevel(int momentum);  // -100 to 100, affects rain/storm probability
 // Manual overrides (for testing or special events)
 void setRaining(bool active);
 void triggerThunderStorm();
+// Fire a lightning bolt on demand (only takes effect while raining, since the
+// bolt animation runs in the rain-gated thunder update). Used by the 'z' key
+// easter egg.
+void triggerBolt();
 
 // === ANIMATION UPDATES ===
 // Call each frame to update weather effects

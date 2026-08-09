@@ -653,6 +653,18 @@ static void spawnBolt() {
     boltStartTime = millis();
 }
 
+void triggerBolt() {
+    // Easter egg (the 'z' key): fire a bolt on demand. Only while raining —
+    // the bolt/flash animation runs in updateThunder(), which is rain-gated, so
+    // a bolt spawned on a clear sky would never animate. Ignore if one's already
+    // in flight so rapid taps don't stack.
+    if (!rainActive) return;
+    if (boltActive || thunderFlashing || pendingStormFlashes > 0) return;
+    pendingStormFlashes = (uint8_t)random(2, 4);
+    lastThunderStorm = millis();
+    spawnBolt();
+}
+
 static void updateThunder(uint32_t now) {
     // Check if time for new storm
     if (!thunderFlashing && !boltActive && thunderFlashesRemaining == 0 && pendingStormFlashes == 0) {

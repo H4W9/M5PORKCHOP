@@ -3500,6 +3500,12 @@ bool FileServer::start(const char* ssid, const char* password) {
     
     // Start non-blocking connection (force restart to recover from desync)
     WiFiUtils::hardReset();
+#ifdef PORKCHOP_PANCAKE
+    // ESP32-C5 is dual-band: allow the STA to join a 5 GHz AP (and 2.4 GHz).
+    // hardReset() leaves the band mode unset, so a 5 GHz-only network would
+    // never connect without this.
+    esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
+#endif
     WiFi.begin(targetSSID, targetPassword);
     
     state = FileServerState::CONNECTING;
@@ -3728,6 +3734,9 @@ void FileServer::updateRunning() {
             
             // Restart connection
             WiFiUtils::hardReset();
+#ifdef PORKCHOP_PANCAKE
+            esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);  // dual-band C5: allow 5 GHz rejoin
+#endif
             WiFi.begin(targetSSID, targetPassword);
             state = FileServerState::RECONNECTING;
             connectStartTime = millis();
