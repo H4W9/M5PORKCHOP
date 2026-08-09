@@ -57,7 +57,15 @@ namespace HeapPolicy {
  #endif
  static constexpr size_t kFileServerMinLargest = 30000;
  static constexpr size_t kFileServerLogThreshold = 60000;
- static constexpr size_t kFileServerUiMinFree = 12000;
+ // Per-request gate for serving the UI assets (CSS/JS). These are PROGMEM +
+ // chunked, so a send needs almost no heap; the C5's internal free dips under
+ // 12KB mid-serve and was returning 503 (broken/unstyled page). Lower it on the
+ // Pancake so serving stays stable. (Largest is checked incl. PSRAM, so leave.)
+ #ifdef PORKCHOP_PANCAKE
+    static constexpr size_t kFileServerUiMinFree = 5000;
+ #else
+    static constexpr size_t kFileServerUiMinFree = 12000;
+ #endif
  static constexpr size_t kFileServerUiMinLargest = 8000;
 
  // Allocation slack (allocator overhead / fragmentation cushion)
