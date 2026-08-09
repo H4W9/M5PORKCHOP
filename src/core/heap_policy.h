@@ -5,7 +5,17 @@
 
 namespace HeapPolicy {
  // TLS gating thresholds
- static constexpr size_t kMinHeapForTls = 35000;
+ // Pancake (ESP32-C5): mbedTLS record buffers + WiFi/LWIP live in PSRAM, so the
+ // 35KB internal-free bar (Cardputer-era) blocked every HTTPS upload
+ // (WiGLE / WPA-SEC) on the C5's ~15-25KB internal heap. 18KB is enough to start
+ // the TLS session with buffers in PSRAM. Cardputer keeps the conservative value.
+ // kMinContigForTls is checked against the largest block incl. PSRAM (8MB), so it
+ // passes as-is on both.
+ #ifdef PORKCHOP_PANCAKE
+    static constexpr size_t kMinHeapForTls = 18000;
+ #else
+    static constexpr size_t kMinHeapForTls = 35000;
+ #endif
  static constexpr size_t kMinContigForTls = 35000;
  static constexpr size_t kProactiveTlsConditioning = 45000;
 
