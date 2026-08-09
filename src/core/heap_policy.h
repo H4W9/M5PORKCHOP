@@ -34,7 +34,17 @@ namespace HeapPolicy {
 
  // Heap stabilization / recovery thresholds
  static constexpr size_t kHeapStableThreshold = 50000;
- static constexpr size_t kFileServerMinHeap = 40000;
+ // File-server (HTTP WebServer) start gate — internal free heap.
+ // Pancake (ESP32-C5) routes WiFi/LWIP buffers to PSRAM
+ // (CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP) and only ~15-25KB internal is free
+ // after the driver loads, so the 40KB Cardputer figure blocked the server from
+ // ever starting. The UI already operates at 12KB free (kFileServerUiMinFree),
+ // so 15KB to start is safe. Cardputer keeps the conservative value.
+ #ifdef PORKCHOP_PANCAKE
+    static constexpr size_t kFileServerMinHeap = 15000;
+ #else
+    static constexpr size_t kFileServerMinHeap = 40000;
+ #endif
  static constexpr size_t kFileServerMinLargest = 30000;
  static constexpr size_t kFileServerLogThreshold = 60000;
  static constexpr size_t kFileServerUiMinFree = 12000;
