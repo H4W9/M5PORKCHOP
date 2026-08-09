@@ -247,7 +247,11 @@ void DoNoHamMode::start() {
     pendingHandshakePool = &pendingHandshakeFallback;
     pendingHandshakeSlots = 1;
     pendingHandshakePoolAllocated = false;
-    void* hsPool = heap_caps_malloc(sizeof(PendingHandshakeFrame) * PENDING_HS_SLOTS, MALLOC_CAP_8BIT);
+    // Allocate the pending-handshake pool in PSRAM (falls back to internal on
+    // no-PSRAM builds) so it doesn't eat the C5's scarce internal SRAM.
+    void* hsPool = heap_caps_malloc(sizeof(PendingHandshakeFrame) * PENDING_HS_SLOTS, MALLOC_CAP_SPIRAM);
+    if (!hsPool)
+        hsPool = heap_caps_malloc(sizeof(PendingHandshakeFrame) * PENDING_HS_SLOTS, MALLOC_CAP_8BIT);
     if (hsPool) {
         pendingHandshakePool = static_cast<PendingHandshakeFrame*>(hsPool);
         pendingHandshakeSlots = PENDING_HS_SLOTS;

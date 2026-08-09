@@ -98,7 +98,11 @@ struct PendingHandshakeFrame {
 // WARNING: Each PendingHandshakeFrame is ~3.3KB (contains 4x EAPOLFrame @ 822 bytes each)
 // Total static pool: 4 * 3.3KB = ~13KB permanently in .bss - reduces heap even when idle!
 static const uint8_t PENDING_HS_SLOTS = 4;
-static PendingHandshakeFrame pendingHsPool[PENDING_HS_SLOTS];  // Static pool - no heap ops in callback
+// Pending-handshake pool. Allocated ONCE in init() (never in the callback), in
+// PSRAM so it doesn't consume the C5's scarce internal SRAM (~13KB) that WiFi +
+// the file-server WebServer need. The callback only writes to the pre-allocated
+// slots — no heap ops in callback context, same as before.
+static PendingHandshakeFrame* pendingHsPool = nullptr;
 // #region agent log
 // [DEBUG] H1: This static pool uses ~13KB of RAM - logged at compile time in .bss
 // Size info logged in init() below
@@ -327,10 +331,17 @@ static bool boredStateReset = true;  // Flag to reset on start()
 static char lastPwnedSSID[33] = "";
 
 void OinkMode::init() {
+    // Allocate the pending-handshake pool once, in PSRAM (falls back to internal
+    // on no-PSRAM builds). Keeps ~13KB of internal SRAM free for WiFi/file server.
+    if (!pendingHsPool) {
+        size_t poolBytes = sizeof(PendingHandshakeFrame) * PENDING_HS_SLOTS;
+        pendingHsPool = (PendingHandshakeFrame*)heap_caps_malloc(poolBytes, MALLOC_CAP_SPIRAM);
+        if (!pendingHsPool)
+            pendingHsPool = (PendingHandshakeFrame*)heap_caps_malloc(poolBytes, MALLOC_CAP_8BIT);
+    }
     // #region agent log
-    // [DEBUG] H1: Log static pool size to confirm ~13KB allocation
     Serial.printf("[DBG-OINK] pendingHsPool size: %u bytes (%u slots x %u each)\n",
-                  (unsigned)(sizeof(pendingHsPool)), 
+                  (unsigned)(sizeof(PendingHandshakeFrame) * PENDING_HS_SLOTS),
                   (unsigned)PENDING_HS_SLOTS,
                   (unsigned)sizeof(PendingHandshakeFrame));
     Serial.printf("[DBG-OINK] EAPOLFrame size: %u bytes\n", (unsigned)sizeof(EAPOLFrame));
@@ -2029,7 +2040,7 @@ void OinkMode::processEAPOL(const uint8_t* payload, uint16_t len,
         if (targetSlot >= PENDING_HS_SLOTS) {
             // Check if buffer is full (write pointer would catch read pointer)
             uint8_t nextWrite = (writePos + 1) % PENDING_HS_SLOTS;
-            if (nextWrite != pendingHsRead && !pendingHsBusy[writePos] && !pendingHsAllocated[writePos]) {
+            if (pendingHsPool && nextWrite != pendingHsRead && !pendingHsBusy[writePos] && !pendingHsAllocated[writePos]) {
                 // Slot is available - acquire from static pool (no heap ops)
                 targetSlot = writePos;
                 

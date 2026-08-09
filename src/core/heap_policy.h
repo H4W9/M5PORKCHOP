@@ -62,7 +62,7 @@ namespace HeapPolicy {
  // 12KB mid-serve and was returning 503 (broken/unstyled page). Lower it on the
  // Pancake so serving stays stable. (Largest is checked incl. PSRAM, so leave.)
  #ifdef PORKCHOP_PANCAKE
-    static constexpr size_t kFileServerUiMinFree = 5000;
+    static constexpr size_t kFileServerUiMinFree = 8000;   // safe floor; pools now in PSRAM give real headroom
  #else
     static constexpr size_t kFileServerUiMinFree = 12000;
  #endif
