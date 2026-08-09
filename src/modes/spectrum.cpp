@@ -137,7 +137,10 @@ static const float SINC_LUT[45] = {
 static int8_t spectrumBuffer[SPECTRUM_WIDTH];           // Current frame RSSI per column
 static int8_t spectrumPersist[SPECTRUM_WIDTH];          // Persistence (rolling average)
 static int8_t spectrumPeak[SPECTRUM_WIDTH];             // Peak hold per column
-static uint8_t waterfallBuffer[WATERFALL_ROWS][SPECTRUM_WIDTH];  // History (0-255 intensity)
+// History (0-255 intensity). Allocated in PSRAM (see init) so it doesn't eat
+// scarce internal SRAM that the C5 needs for WiFi/file transfer. Pointer-to-row
+// type keeps the [row][x] access syntax unchanged.
+static uint8_t (*waterfallBuffer)[SPECTRUM_WIDTH] = nullptr;
 static uint8_t waterfallWriteRow = 0;                   // Current write position (circular)
 static uint32_t lastWaterfallUpdate = 0;
 static const uint32_t WATERFALL_UPDATE_MS = 100;        // 10 FPS waterfall scroll
@@ -325,7 +328,15 @@ void SpectrumMode::init() {
     memset(spectrumBuffer, RSSI_MIN, sizeof(spectrumBuffer));
     memset(spectrumPersist, RSSI_MIN, sizeof(spectrumPersist));
     memset(spectrumPeak, RSSI_MIN, sizeof(spectrumPeak));
-    memset(waterfallBuffer, 0, sizeof(waterfallBuffer));
+    // Allocate the waterfall history in PSRAM (CPU-only buffer — keeps internal
+    // SRAM free for WiFi). Falls back to internal on no-PSRAM builds (Cardputer).
+    const size_t wfBytes = (size_t)WATERFALL_ROWS * SPECTRUM_WIDTH;
+    if (!waterfallBuffer) {
+        waterfallBuffer = (uint8_t(*)[SPECTRUM_WIDTH])heap_caps_malloc(wfBytes, MALLOC_CAP_SPIRAM);
+        if (!waterfallBuffer)  // no PSRAM available — fall back to internal heap
+            waterfallBuffer = (uint8_t(*)[SPECTRUM_WIDTH])heap_caps_malloc(wfBytes, MALLOC_CAP_8BIT);
+    }
+    if (waterfallBuffer) memset(waterfallBuffer, 0, wfBytes);
     waterfallWriteRow = 0;
     lastWaterfallUpdate = 0;
 }
@@ -1207,6 +1218,7 @@ void SpectrumMode::updateSpectrumBuffers() {
 
 // Push current spectrum buffer to waterfall history
 void SpectrumMode::updateWaterfall() {
+    if (!waterfallBuffer) return;  // allocation failed (no heap) — skip safely
     uint32_t now = millis();
     if (now - lastWaterfallUpdate < WATERFALL_UPDATE_MS) return;
     lastWaterfallUpdate = now;
@@ -1227,6 +1239,7 @@ void SpectrumMode::updateWaterfall() {
 
 // Draw waterfall display - historical spectrum scrolling down
 void SpectrumMode::drawWaterfall(M5Canvas& canvas) {
+    if (!waterfallBuffer) return;  // allocation failed (no heap) — nothing to draw
     // Draw horizontal separator line above waterfall
     canvas.drawFastHLine(SPECTRUM_LEFT, WATERFALL_TOP - 1, SPECTRUM_WIDTH, COLOR_FG);
     
