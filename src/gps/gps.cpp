@@ -5,6 +5,7 @@
 #include "../core/sdlog.h"
 #include "../piglet/mood.h"
 #include "../ui/display.h"
+#include "../core/rtc_ds3231.h"
 #include <sys/time.h>   // settimeofday — sync the system clock from GPS UTC
 
 // Days since 1970-01-01 for a civil (UTC) Y/M/D (Howard Hinnant's algorithm).
@@ -231,6 +232,7 @@ void GPS::updateData() {
             tv.tv_usec = 0;
             settimeofday(&tv, nullptr);
             lastClockSync = nowMs;
+            Ds3231::writeBackFromSystem();  // persist fresh GPS time to the RTC
         }
     }
 
