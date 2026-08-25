@@ -18,6 +18,7 @@
 #include "core/heap_policy.h"
 #include "core/heap_health.h"
 #include "core/network_recon.h"
+#include "core/rtc_ds3231.h"
 #include "ui/display.h"
 #include "gps/gps.h"
 #include "piglet/avatar.h"
@@ -162,6 +163,13 @@ void setup() {
     analogWrite(PANCAKE_TFT_BL, Config::personality().brightness * 255 / 100);
 #else
     M5.Display.setBrightness(Config::personality().brightness * 255 / 100);
+#endif
+
+    // Seed the system clock from the DS3231 RTC (if wired) before anything
+    // samples the time. Wire is already up (Display::init -> touch begin). On
+    // the C5 the RTC shares the touch I2C bus at 0x68; absent -> harmless no-op.
+#ifdef PORKCHOP_PANCAKE
+    Ds3231::begin();
 #endif
 
     // Initialize piglet personality

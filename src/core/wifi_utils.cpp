@@ -8,6 +8,7 @@
 #include <time.h>
 #include <NimBLEDevice.h>  // For BLE deinit during heap conditioning
 #include "heap_health.h"
+#include "rtc_ds3231.h"
 #include "heap_policy.h"
 #include "heap_gates.h"
 
@@ -172,6 +173,7 @@ bool ensureTimeSynced(uint32_t timeoutMs, bool force) {
     while (millis() - start < timeoutMs) {
         if (isTimeValid()) {
             lastTimeSyncMs = millis();
+            Ds3231::writeBackFromSystem();  // persist fresh NTP time to the RTC
             xSemaphoreGive(timeSyncMutex);
             return true;
         }

@@ -17,6 +17,7 @@
 #include "../core/sd_layout.h"
 #include "../core/wifi_utils.h"
 #include "../core/heap_gates.h"
+#include "../core/rtc_ds3231.h"
 #include "../core/heap_policy.h"
 #include "../core/network_recon.h"
 #include "../piglet/mood.h"
@@ -1367,7 +1368,8 @@ void PigSyncMode::update() {
             tv.tv_sec = adjustedTime;
             tv.tv_usec = 0;
             settimeofday(&tv, nullptr);
-            
+            Ds3231::writeBackFromSystem();  // persist Sirloin's time to the RTC
+
             PIGSYNC_LOGF("[PIGSYNC-CLI] Time synced from Sirloin: %lu (RTT=%lums)\n", adjustedTime, rtt);
         } else {
             PIGSYNC_LOGLN("[PIGSYNC-CLI] Sirloin RTC not valid, skipping time sync");
