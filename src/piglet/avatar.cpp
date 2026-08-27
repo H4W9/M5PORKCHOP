@@ -5,6 +5,7 @@
 #include "../ui/display.h"
 #include "../audio/sfx.h"
 #include "../core/config.h"
+#include "../core/timeutil.h"
 #include <time.h>
 
 // Static members
@@ -1266,27 +1267,25 @@ bool Avatar::isNightTime() {
     }
     lastNightCheck = now;
 
-    int8_t tzOffset = Config::gps().timezoneOffset;
-
+    // Clocks are kept in UTC; the TZ env (set from the user's zone at boot) makes
+    // localtime_r() yield DST-aware local time. M5.Rtc (Cardputer) also holds UTC,
+    // so route it through a UTC epoch too. Pancake/V8 M5.Rtc returns year 0, so it
+    // falls through to the time() path.
     auto dt = M5.Rtc.getDateTime();
     if (dt.date.year >= 2024) {
-        int hour = (int)dt.time.hours + tzOffset;
-        if (hour >= 24) hour -= 24;
-        if (hour < 0) hour += 24;
-        cachedNightMode = (hour >= 20 || hour < 6);
+        time_t utc = TimeUtil::utcEpoch(dt.date.year, dt.date.month, dt.date.date,
+                                        dt.time.hours, dt.time.minutes, dt.time.seconds);
+        struct tm local;
+        localtime_r(&utc, &local);
+        cachedNightMode = (local.tm_hour >= 20 || local.tm_hour < 6);
         return cachedNightMode;
     }
 
     time_t unixNow = time(nullptr);
     if (unixNow >= 1700000000) {
-        // RTC/system time is kept in UTC; gmtime_r + manual offset (rather than
-        // localtime_r, which would apply the build's TZ, not the user's config)
-        // matches how GPS::getTimeString/getSystemTimeString convert to local time.
-        unixNow += (int32_t)tzOffset * 3600;
-        struct tm timeinfo;
-        gmtime_r(&unixNow, &timeinfo);
-        uint8_t hour = (uint8_t)timeinfo.tm_hour;
-        cachedNightMode = (hour >= 20 || hour < 6);
+        struct tm local;
+        localtime_r(&unixNow, &local);
+        cachedNightMode = (local.tm_hour >= 20 || local.tm_hour < 6);
         return cachedNightMode;
     }
 

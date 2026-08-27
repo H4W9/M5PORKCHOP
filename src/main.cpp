@@ -19,6 +19,7 @@
 #include "core/heap_health.h"
 #include "core/network_recon.h"
 #include "core/rtc_ds3231.h"
+#include "core/timezones.h"
 #include "ui/display.h"
 #include "gps/gps.h"
 #include "piglet/avatar.h"
@@ -140,6 +141,11 @@ void setup() {
     if (!Config::init()) {
         Serial.println("[MAIN] Config init failed, using defaults");
     }
+
+    // Point the C library's local-time conversion at the user's timezone before
+    // anything formats a clock or samples day/night. localtime_r() then applies
+    // this (DST-aware) zone; the system clock itself stays UTC.
+    Timezones::apply(Config::gps().timezoneIndex);
 
     // Init SD logging (will be enabled via settings if user wants)
     SDLog::init();
@@ -270,10 +276,8 @@ void loop() {
             lastBakedCheck = millis();
             time_t now = time(nullptr);
             if (now > 1600000000) {
-                int8_t tzOffset = Config::gps().timezoneOffset;
-                now += (int32_t)tzOffset * 3600;
                 struct tm timeinfo;
-                gmtime_r(&now, &timeinfo);
+                localtime_r(&now, &timeinfo);  // TZ env applies the user's zone
                 if ((timeinfo.tm_hour == 4 || timeinfo.tm_hour == 16) && timeinfo.tm_min == 20) {
                     bakedActive = true;
                     bakedStartMs = millis();

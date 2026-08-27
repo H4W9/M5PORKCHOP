@@ -10,6 +10,8 @@ struct PancakeTouchPoint {
     int16_t x = -1;
     int16_t y = -1;
     bool    valid = false;
+    uint8_t event = 2;   // FT6336 event: 0=press-down, 2=contact/hold (1=lift filtered).
+                         // Default 2 = "hold" so consumers fall back to the release-gate.
 };
 
 class FT6336Touch {
@@ -50,6 +52,7 @@ public:
         pt.x = ((int16_t)(xh & 0x0F) << 8) | xl;
         pt.y = ((int16_t)(yh & 0x0F) << 8) | yl;
         pt.valid = true;
+        pt.event = event;   // lets the keyboard fire each new press-down (fast taps)
 
         // Apply portrait rotation (rotation=2 = 180deg flip)
         if (PANCAKE_ROTATION == 2) {

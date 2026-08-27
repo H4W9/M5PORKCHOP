@@ -14,6 +14,8 @@ struct PancakeTouchPoint {
     int16_t x = -1;
     int16_t y = -1;
     bool    valid = false;
+    uint8_t event = 2;   // resistive panel has no press-down event; always "hold"
+                         // so the keyboard uses its release-gate (unchanged on V8).
 };
 
 extern TFT_eSPI* pancakeTFT;   // shared display + touch SPI instance

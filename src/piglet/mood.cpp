@@ -3,6 +3,7 @@
 #include "mood.h"
 #include "weather.h"
 #include "../core/config.h"
+#include "../core/timeutil.h"
 #include "../core/xp.h"
 #include "../core/porkchop.h"
 #include "../core/heap_health.h"
@@ -1858,23 +1859,22 @@ void Mood::onLowBattery() {
 
 // Helper: get current hour from RTC or Unix time (same fallback as Avatar::isNightTime)
 static int8_t getCurrentHour() {
-    int8_t tzOffset = Config::gps().timezoneOffset;
-
+    // Clocks are UTC; the TZ env (user's zone, set at boot) makes localtime_r()
+    // yield DST-aware local time. M5.Rtc (Cardputer) also holds UTC, so convert
+    // through a UTC epoch; Pancake/V8 M5.Rtc returns year 0 -> time() path.
     auto dt = M5.Rtc.getDateTime();
     if (dt.date.year >= 2024) {
-        int hour = (int)dt.time.hours + tzOffset;
-        if (hour >= 24) hour -= 24;
-        if (hour < 0) hour += 24;
-        return (int8_t)hour;
+        time_t utc = TimeUtil::utcEpoch(dt.date.year, dt.date.month, dt.date.date,
+                                        dt.time.hours, dt.time.minutes, dt.time.seconds);
+        struct tm local;
+        localtime_r(&utc, &local);
+        return (int8_t)local.tm_hour;
     }
     time_t unixNow = time(nullptr);
     if (unixNow >= 1700000000) {
-        // Apply configured tz offset the same way GPS::getTimeString does,
-        // rather than localtime_r (which uses the build's TZ, not the config).
-        unixNow += (int32_t)tzOffset * 3600;
-        struct tm timeinfo;
-        gmtime_r(&unixNow, &timeinfo);
-        return (int8_t)timeinfo.tm_hour;
+        struct tm local;
+        localtime_r(&unixNow, &local);
+        return (int8_t)local.tm_hour;
     }
     return -1;  // Unknown
 }

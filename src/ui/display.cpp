@@ -111,11 +111,10 @@ static void getSystemTimeString(char* out, size_t len) {
         return;
     }
 
-    int8_t tzOffset = Config::gps().timezoneOffset;
-    now += (int32_t)tzOffset * 3600;
-
+    // System clock is UTC; the TZ env (set from the user's zone at boot) makes
+    // localtime_r() yield DST-aware local wall time.
     struct tm timeinfo;
-    gmtime_r(&now, &timeinfo);
+    localtime_r(&now, &timeinfo);
 
     Display::formatClock(out, len, timeinfo.tm_hour, timeinfo.tm_min);
 }

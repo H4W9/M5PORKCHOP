@@ -5,6 +5,7 @@
 #include "display.h"
 #include "../audio/sfx.h"
 #include "../core/config.h"
+#include "../core/timezones.h"
 #include "../core/xp.h"
 #include "../core/sd_layout.h"
 #include "../core/sdlog.h"
@@ -145,7 +146,7 @@ static const EntryData kGpsEntries[] = {
     {SET_GPS_BAUD, "GPS BAUD", SettingType::VALUE, 0, 3, 1, "", "MATCH YOUR GPS MODULE"},
     {SET_GPS_RX, "GPS RX PIN", SettingType::VALUE, 1, 46, 1, "", "G1=GROVE, G15=LORACAP"},
     {SET_GPS_TX, "GPS TX PIN", SettingType::VALUE, 1, 46, 1, "", "G2=GROVE, G13=LORACAP"},
-    {SET_GPS_TZ, "TZ OFFSET", SettingType::VALUE, -12, 14, 1, "H", "TZ OFFSET"},
+    {SET_GPS_TZ, "TIMEZONE", SettingType::VALUE, 0, Timezones::kCount - 1, 1, "", "PICK YOUR ZONE (DST-AWARE)"},
     {SET_GPS_TIMEFMT, "TIME FMT", SettingType::VALUE, 0, 1, 1, "", "12HR / 24HR CLOCK"}
 };
 
@@ -540,7 +541,7 @@ static int getSettingValue(SettingId id) {
         case SET_GPS_TX:
             return Config::gps().txPin;
         case SET_GPS_TZ:
-            return Config::gps().timezoneOffset;
+            return Config::gps().timezoneIndex;
         case SET_GPS_TIMEFMT:
             return Config::gps().use24HourTime ? 1 : 0;
         case SET_BLE_BURST:
@@ -746,9 +747,11 @@ static bool setSettingValue(SettingId id, int value) {
             return true;
         }
         case SET_GPS_TZ: {
-            int8_t newVal = static_cast<int8_t>(value);
-            if (Config::gps().timezoneOffset == newVal) return false;
-            Config::gps().timezoneOffset = newVal;
+            uint8_t newVal = static_cast<uint8_t>(value);
+            if (newVal >= (uint8_t)Timezones::kCount) newVal = Timezones::kDefaultIndex;
+            if (Config::gps().timezoneIndex == newVal) return false;
+            Config::gps().timezoneIndex = newVal;
+            Timezones::apply(newVal);   // take effect immediately (clocks + day/night)
             return true;
         }
         case SET_GPS_TIMEFMT: {
@@ -1214,6 +1217,19 @@ const char* SettingsMenu::getSelectedDescription() {
     return entries[groupIndex].description;
 }
 
+// Small filled chevron for the scroll indicators, so the up and down arrows are
+// exact vertical mirrors of each other. `topY` is the top of the 6px-tall box;
+// `up` puts the apex at the top, otherwise at the bottom.
+static void drawScrollChevron(M5Canvas& canvas, int cx, int topY, bool up, uint16_t color) {
+    const int hw = 5;   // half-width
+    const int h  = 6;   // height
+    if (up) {
+        canvas.fillTriangle(cx, topY, cx - hw, topY + h, cx + hw, topY + h, color);
+    } else {
+        canvas.fillTriangle(cx - hw, topY, cx + hw, topY, cx, topY + h, color);
+    }
+}
+
 void SettingsMenu::draw(M5Canvas& canvas) {
     canvas.fillSprite(COLOR_FG);
     canvas.setTextColor(COLOR_BG);
@@ -1328,13 +1344,11 @@ void SettingsMenu::draw(M5Canvas& canvas) {
             y += lineHeight;
         }
 
-        canvas.setTextColor(COLOR_BG);
-        canvas.setTextDatum(top_center);
         if (rootScroll > 0) {
-            canvas.drawString("^", DISPLAY_W / 2, 0);
+            drawScrollChevron(canvas, DISPLAY_W / 2, 1, true, COLOR_BG);
         }
         if (rootScroll + VISIBLE_ROOT_ITEMS < rootCount) {
-            canvas.drawString("v", DISPLAY_W / 2, MAIN_H - 10);
+            drawScrollChevron(canvas, DISPLAY_W / 2, MAIN_H - 20, false, COLOR_BG);
         }
         return;
     }
@@ -1428,6 +1442,14 @@ void SettingsMenu::draw(M5Canvas& canvas) {
                     strncpy(valBuf, srcLabel, sizeof(valBuf) - 1);
                     valBuf[sizeof(valBuf) - 1] = '\0';
                 }
+            } else if (entry.id == SET_GPS_TZ) {
+                const char* zoneLabel = Timezones::nameFor((uint8_t)value);
+                if (selected && editing) {
+                    snprintf(valBuf, sizeof(valBuf), "[%s]", zoneLabel);
+                } else {
+                    strncpy(valBuf, zoneLabel, sizeof(valBuf) - 1);
+                    valBuf[sizeof(valBuf) - 1] = '\0';
+                }
             } else if (entry.id == SET_GPS_TIMEFMT) {
                 const char* fmtLabel = value ? "24HR" : "12HR";
                 if (selected && editing) {
@@ -1451,12 +1473,10 @@ void SettingsMenu::draw(M5Canvas& canvas) {
         y += lineHeight;
     }
 
-    canvas.setTextColor(COLOR_BG);
-    canvas.setTextDatum(top_center);
     if (groupScroll > 0) {
-        canvas.drawString("^", DISPLAY_W / 2, lineHeight);
+        drawScrollChevron(canvas, DISPLAY_W / 2, lineHeight, true, COLOR_BG);
     }
     if (groupScroll + VISIBLE_GROUP_ITEMS < count) {
-        canvas.drawString("v", DISPLAY_W / 2, MAIN_H - 10);
+        drawScrollChevron(canvas, DISPLAY_W / 2, MAIN_H - 20, false, COLOR_BG);
     }
 }

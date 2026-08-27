@@ -47,8 +47,12 @@ struct GPSConfig {
     uint16_t updateInterval = 5;        // Seconds between GPS updates
     uint16_t sleepTimeMs = 5000;        // Sleep duration when stationary
     bool powerSave = true;
-    int8_t timezoneOffset = 0;          // Hours offset from UTC (-12 to +14)
-    bool use24HourTime = true;          // true = 24hr clock, false = 12hr AM/PM
+    int8_t timezoneOffset = 0;          // LEGACY fixed offset — superseded by
+                                        // timezoneIndex (POSIX TZ); kept only for
+                                        // config-blob layout stability.
+    uint8_t timezoneIndex = 5;          // Index into Timezones::kOptions (DST-aware).
+                                        // 5 = "Central" (matches ASCII-Aquarium).
+    bool use24HourTime = true;          // true = 24hr clock, false = 12hr am/pm
 };
 
 // ML data collection mode

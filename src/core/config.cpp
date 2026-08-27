@@ -4,6 +4,7 @@
 #include "config.h"
 #include "sdlog.h"
 #include "sd_layout.h"
+#include "timezones.h"
 #ifndef PORKCHOP_PANCAKE
 #include <M5Cardputer.h>
 #endif
@@ -50,7 +51,7 @@ static bool sdAvailable = false;
 
 // ---- Binary config blob (zero heap allocation) ----
 static constexpr uint32_t CONFIG_MAGIC   = 0x504F524B;  // 'PORK'
-static constexpr uint16_t CONFIG_VERSION = 2;  // v2: appended gpsUse12HourTime
+static constexpr uint16_t CONFIG_VERSION = 3;  // v2: gpsUse12HourTime; v3: gpsTimezoneIndex
 #define CONFIG_BIN_FILE "/porkchop.dat"
 
 static const char* configBinPathSD() {
@@ -112,6 +113,9 @@ struct __attribute__((packed)) ConfigBlob {
     // Stored INVERTED: 0 = 24hr (the pre-existing default), 1 = 12hr. This way a
     // pre-upgrade blob (zero-filled tail) decodes to 24hr, not 12hr.
     uint8_t  gpsUse12HourTime;
+    // POSIX-TZ zone index (see Timezones). Only trusted when b.version >= 3;
+    // older blobs are migrated to the default zone in extractBlob().
+    uint8_t  gpsTimezoneIndex;
 };
 
 static void populateBlob(ConfigBlob& b, const GPSConfig& gps, const WiFiConfig& wifi,
@@ -131,6 +135,7 @@ static void populateBlob(ConfigBlob& b, const GPSConfig& gps, const WiFiConfig& 
     b.gpsPowerSave      = gps.powerSave ? 1 : 0;
     b.gpsTimezoneOffset = gps.timezoneOffset;
     b.gpsUse12HourTime  = gps.use24HourTime ? 0 : 1;   // inverted; see struct note
+    b.gpsTimezoneIndex  = gps.timezoneIndex;
 
     b.channelHopInterval   = wifi.channelHopInterval;
     b.spectrumHopInterval  = wifi.spectrumHopInterval;
@@ -205,6 +210,11 @@ static void extractBlob(const ConfigBlob& b, GPSConfig& gps, WiFiConfig& wifi,
     gps.powerSave      = b.gpsPowerSave != 0;
     gps.timezoneOffset = b.gpsTimezoneOffset;
     gps.use24HourTime  = (b.gpsUse12HourTime == 0);    // inverted; see struct note
+    // Migrate pre-v3 configs (no zone index stored) to the default zone rather
+    // than letting a zero-filled tail read back as index 0 (UTC).
+    gps.timezoneIndex  = (b.version < 3) ? Timezones::kDefaultIndex
+                       : (b.gpsTimezoneIndex < (uint8_t)Timezones::kCount
+                            ? b.gpsTimezoneIndex : Timezones::kDefaultIndex);
 
     // Auto-set pins based on source (same as JSON loader)
     if (gps.source == GPSSource::CAP_LORA) {
@@ -573,6 +583,10 @@ bool Config::applyJson(const JsonDocument& doc) {
         gpsConfig.sleepTimeMs = doc["gps"]["sleepTimeMs"] | 5000;
         gpsConfig.powerSave = doc["gps"]["powerSave"] | true;
         gpsConfig.timezoneOffset = doc["gps"]["timezoneOffset"] | 0;
+        gpsConfig.timezoneIndex = doc["gps"]["timezoneIndex"] | (int)Timezones::kDefaultIndex;
+        if (gpsConfig.timezoneIndex >= (uint8_t)Timezones::kCount) {
+            gpsConfig.timezoneIndex = Timezones::kDefaultIndex;
+        }
         gpsConfig.use24HourTime = doc["gps"]["use24HourTime"] | true;
     }
 

@@ -118,7 +118,12 @@ public:
         PancakeTouchPoint tp;
         bool touched = _touch->getPoint(tp) && tp.valid;
         if (!touched) { _lastTouchDown = false; return false; }
-        if (_lastTouchDown) return false;  // only fire on new press
+        // Fire on a new press. Normally that means the release-gate has cleared
+        // (a prior frame saw no finger), but the FT6336 also flags a fresh
+        // press-down (event 0) — honor that so a rapid re-tap registers even if
+        // the poll loop never sampled the brief lift between taps.
+        bool freshPress = (tp.event == 0);
+        if (_lastTouchDown && !freshPress) return false;  // holding, not a new tap
         _lastTouchDown = true;
 
         if (tp.y < PANCAKE_KB_Y) return false;

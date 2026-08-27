@@ -6,6 +6,7 @@
 #include "../piglet/mood.h"
 #include "../ui/display.h"
 #include "../core/rtc_ds3231.h"
+#include "../core/timeutil.h"
 #include <sys/time.h>   // settimeofday — sync the system clock from GPS UTC
 
 // Days since 1970-01-01 for a civil (UTC) Y/M/D (Howard Hinnant's algorithm).
@@ -399,16 +400,15 @@ void GPS::getTimeString(char* out, size_t len) {
         return;
     }
     if (xSemaphoreTake(mutex, 10 / portTICK_PERIOD_MS)) {
-        if (gps->time.isValid()) {
-            // Apply timezone offset from config
-            int8_t tzOffset = Config::gps().timezoneOffset;
-            int hour = gps->time.hour() + tzOffset;
-            
-            // Handle day wrap
-            if (hour >= 24) hour -= 24;
-            if (hour < 0) hour += 24;
-
-            Display::formatClock(out, len, hour, gps->time.minute());
+        if (gps->time.isValid() && gps->date.isValid() && gps->date.year() >= 2024) {
+            // GPS gives UTC. Build a UTC epoch, then let localtime_r() apply the
+            // user's (DST-aware) zone — the date is required so DST resolves.
+            time_t utc = TimeUtil::utcEpoch(gps->date.year(), gps->date.month(),
+                                            gps->date.day(), gps->time.hour(),
+                                            gps->time.minute(), gps->time.second());
+            struct tm local;
+            localtime_r(&utc, &local);
+            Display::formatClock(out, len, local.tm_hour, local.tm_min);
         } else {
             snprintf(out, len, "--:--");
         }
