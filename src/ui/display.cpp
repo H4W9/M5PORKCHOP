@@ -91,6 +91,18 @@ uint16_t getCloudColor() {
     return Weather::isRaining() ? REAL_CLOUD_STORM : REAL_CLOUD_FAIR;
 }
 
+void Display::formatClock(char* out, size_t len, int hour24, int minute) {
+    if (!out || len == 0) return;
+    if (Config::gps().use24HourTime) {
+        snprintf(out, len, "%02d:%02d", hour24, minute);
+    } else {
+        int h12 = hour24 % 12;
+        if (h12 == 0) h12 = 12;
+        const char* ap = (hour24 < 12) ? "am" : "pm";
+        snprintf(out, len, "%d:%02d%s", h12, minute, ap);
+    }
+}
+
 static void getSystemTimeString(char* out, size_t len) {
     if (!out || len == 0) return;
     time_t now = time(nullptr);
@@ -105,7 +117,7 @@ static void getSystemTimeString(char* out, size_t len) {
     struct tm timeinfo;
     gmtime_r(&now, &timeinfo);
 
-    snprintf(out, len, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+    Display::formatClock(out, len, timeinfo.tm_hour, timeinfo.tm_min);
 }
 
 static portMUX_TYPE displayMux = portMUX_INITIALIZER_UNLOCKED;
@@ -789,7 +801,7 @@ void Display::drawTopBar() {
                  modeBuf, moodLabel);
     }
     
-    char timeBuf[8];
+    char timeBuf[10];  // fits "12:59pm" (12hr) with margin
     if (GPS::hasFix()) {
         GPS::getTimeString(timeBuf, sizeof(timeBuf));
     } else {

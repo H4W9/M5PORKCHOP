@@ -58,6 +58,7 @@ enum SettingId : uint8_t {
     SET_GPS_RX,
     SET_GPS_TX,
     SET_GPS_TZ,
+    SET_GPS_TIMEFMT,
     SET_BLE_BURST,
     SET_BLE_ADV,
     SET_SD_LOG,
@@ -144,7 +145,8 @@ static const EntryData kGpsEntries[] = {
     {SET_GPS_BAUD, "GPS BAUD", SettingType::VALUE, 0, 3, 1, "", "MATCH YOUR GPS MODULE"},
     {SET_GPS_RX, "GPS RX PIN", SettingType::VALUE, 1, 46, 1, "", "G1=GROVE, G15=LORACAP"},
     {SET_GPS_TX, "GPS TX PIN", SettingType::VALUE, 1, 46, 1, "", "G2=GROVE, G13=LORACAP"},
-    {SET_GPS_TZ, "TZ OFFSET", SettingType::VALUE, -12, 14, 1, "H", "TZ OFFSET"}
+    {SET_GPS_TZ, "TZ OFFSET", SettingType::VALUE, -12, 14, 1, "H", "TZ OFFSET"},
+    {SET_GPS_TIMEFMT, "TIME FMT", SettingType::VALUE, 0, 1, 1, "", "12HR / 24HR CLOCK"}
 };
 
 static const EntryData kBleEntries[] = {
@@ -222,6 +224,7 @@ static bool isConfigSetting(SettingId id) {
         case SET_GPS_RX:
         case SET_GPS_TX:
         case SET_GPS_TZ:
+        case SET_GPS_TIMEFMT:
         case SET_BLE_BURST:
         case SET_BLE_ADV:
             return true;
@@ -538,6 +541,8 @@ static int getSettingValue(SettingId id) {
             return Config::gps().txPin;
         case SET_GPS_TZ:
             return Config::gps().timezoneOffset;
+        case SET_GPS_TIMEFMT:
+            return Config::gps().use24HourTime ? 1 : 0;
         case SET_BLE_BURST:
             return Config::ble().burstInterval;
         case SET_BLE_ADV:
@@ -744,6 +749,12 @@ static bool setSettingValue(SettingId id, int value) {
             int8_t newVal = static_cast<int8_t>(value);
             if (Config::gps().timezoneOffset == newVal) return false;
             Config::gps().timezoneOffset = newVal;
+            return true;
+        }
+        case SET_GPS_TIMEFMT: {
+            bool newVal = (value != 0);
+            if (Config::gps().use24HourTime == newVal) return false;
+            Config::gps().use24HourTime = newVal;
             return true;
         }
         case SET_BLE_BURST: {
@@ -1415,6 +1426,14 @@ void SettingsMenu::draw(M5Canvas& canvas) {
                     snprintf(valBuf, sizeof(valBuf), "[%s]", srcLabel);
                 } else {
                     strncpy(valBuf, srcLabel, sizeof(valBuf) - 1);
+                    valBuf[sizeof(valBuf) - 1] = '\0';
+                }
+            } else if (entry.id == SET_GPS_TIMEFMT) {
+                const char* fmtLabel = value ? "24HR" : "12HR";
+                if (selected && editing) {
+                    snprintf(valBuf, sizeof(valBuf), "[%s]", fmtLabel);
+                } else {
+                    strncpy(valBuf, fmtLabel, sizeof(valBuf) - 1);
                     valBuf[sizeof(valBuf) - 1] = '\0';
                 }
             } else if (selected && editing) {

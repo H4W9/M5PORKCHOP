@@ -107,6 +107,11 @@ public:
     static void update();
     static void clear();
 
+    // Format a wall-clock time (already timezone-adjusted, 0-23 hour) into `out`
+    // per the user's 12/24-hour setting (Config::gps().use24HourTime).
+    // 24hr -> "HH:MM"; 12hr -> "H:MMA" / "H:MMP".
+    static void formatClock(char* out, size_t len, int hour24, int minute);
+
     // Upload progress tracking
     static bool uploadInProgress;
     static uint8_t uploadProgress;

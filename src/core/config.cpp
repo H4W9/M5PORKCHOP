@@ -50,7 +50,7 @@ static bool sdAvailable = false;
 
 // ---- Binary config blob (zero heap allocation) ----
 static constexpr uint32_t CONFIG_MAGIC   = 0x504F524B;  // 'PORK'
-static constexpr uint16_t CONFIG_VERSION = 1;
+static constexpr uint16_t CONFIG_VERSION = 2;  // v2: appended gpsUse12HourTime
 #define CONFIG_BIN_FILE "/porkchop.dat"
 
 static const char* configBinPathSD() {
@@ -107,6 +107,11 @@ struct __attribute__((packed)) ConfigBlob {
     float    mlVulnScorerThreshold;
     uint8_t  mlAutoUpdate;
     char     mlUpdateUrl[128];
+
+    // --- appended fields (keep at END so old blobs read back as 0) ---
+    // Stored INVERTED: 0 = 24hr (the pre-existing default), 1 = 12hr. This way a
+    // pre-upgrade blob (zero-filled tail) decodes to 24hr, not 12hr.
+    uint8_t  gpsUse12HourTime;
 };
 
 static void populateBlob(ConfigBlob& b, const GPSConfig& gps, const WiFiConfig& wifi,
@@ -125,6 +130,7 @@ static void populateBlob(ConfigBlob& b, const GPSConfig& gps, const WiFiConfig& 
     b.gpsSleepTimeMs    = gps.sleepTimeMs;
     b.gpsPowerSave      = gps.powerSave ? 1 : 0;
     b.gpsTimezoneOffset = gps.timezoneOffset;
+    b.gpsUse12HourTime  = gps.use24HourTime ? 0 : 1;   // inverted; see struct note
 
     b.channelHopInterval   = wifi.channelHopInterval;
     b.spectrumHopInterval  = wifi.spectrumHopInterval;
@@ -198,6 +204,7 @@ static void extractBlob(const ConfigBlob& b, GPSConfig& gps, WiFiConfig& wifi,
     gps.sleepTimeMs    = b.gpsSleepTimeMs;
     gps.powerSave      = b.gpsPowerSave != 0;
     gps.timezoneOffset = b.gpsTimezoneOffset;
+    gps.use24HourTime  = (b.gpsUse12HourTime == 0);    // inverted; see struct note
 
     // Auto-set pins based on source (same as JSON loader)
     if (gps.source == GPSSource::CAP_LORA) {
@@ -566,6 +573,7 @@ bool Config::applyJson(const JsonDocument& doc) {
         gpsConfig.sleepTimeMs = doc["gps"]["sleepTimeMs"] | 5000;
         gpsConfig.powerSave = doc["gps"]["powerSave"] | true;
         gpsConfig.timezoneOffset = doc["gps"]["timezoneOffset"] | 0;
+        gpsConfig.use24HourTime = doc["gps"]["use24HourTime"] | true;
     }
 
     // ML config

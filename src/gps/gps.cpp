@@ -407,8 +407,8 @@ void GPS::getTimeString(char* out, size_t len) {
             // Handle day wrap
             if (hour >= 24) hour -= 24;
             if (hour < 0) hour += 24;
-            
-            snprintf(out, len, "%02d:%02d", hour, gps->time.minute());
+
+            Display::formatClock(out, len, hour, gps->time.minute());
         } else {
             snprintf(out, len, "--:--");
         }

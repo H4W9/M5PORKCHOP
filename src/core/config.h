@@ -48,6 +48,7 @@ struct GPSConfig {
     uint16_t sleepTimeMs = 5000;        // Sleep duration when stationary
     bool powerSave = true;
     int8_t timezoneOffset = 0;          // Hours offset from UTC (-12 to +14)
+    bool use24HourTime = true;          // true = 24hr clock, false = 12hr AM/PM
 };
 
 // ML data collection mode
