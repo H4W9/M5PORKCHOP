@@ -358,25 +358,25 @@ bool WPASec::uploadSingleCapture(const char* filepath, const char* bssid) {
     // Build multipart boundary
     char boundary[32];
     snprintf(boundary, sizeof(boundary), "----WPASec%08lX", millis());
-    
-    // Calculate content length
-    // Multipart format:
-    // --boundary\r\n
-    // Content-Disposition: form-data; name="file"; filename="xxx"\r\n
-    // Content-Type: application/octet-stream\r\n\r\n
-    // <file data>
-    // \r\n--boundary--\r\n
-    char disposition[128];
-    snprintf(disposition, sizeof(disposition),
-             "Content-Disposition: form-data; name=\"file\"; filename=\"%s\"",
-             filename);
-    
-    size_t contentLength = 2 + strlen(boundary) + 2 +           // --boundary\r\n
-                           strlen(disposition) + 2 +             // disposition\r\n
-                           36 + 4 +                              // Content-Type + \r\n\r\n
-                           fileSize +                            // file data
-                           2 + 2 + strlen(boundary) + 4;         // \r\n--boundary--\r\n
-    
+
+    // bodyStart: "--boundary\r\nContent-Disposition: ...; filename="xxx"\r\nContent-Type: application/octet-stream\r\n\r\n"
+    // Built (and measured) as one buffer via snprintf's return value, rather than
+    // hand-summed component lengths — a hand-counted "36" for the fixed
+    // Content-Type line was actually 38, under-stating Content-Length by 2 bytes
+    // on every upload and truncating the closing boundary as the server saw it.
+    char bodyStart[220];
+    int bodyStartLen = snprintf(bodyStart, sizeof(bodyStart),
+        "--%s\r\n"
+        "Content-Disposition: form-data; name=\"file\"; filename=\"%s\"\r\n"
+        "Content-Type: application/octet-stream\r\n\r\n",
+        boundary, filename);
+
+    // bodyEnd: "\r\n--boundary--\r\n"
+    char bodyEnd[64];
+    int bodyEndLen = snprintf(bodyEnd, sizeof(bodyEnd), "\r\n--%s--\r\n", boundary);
+
+    size_t contentLength = (size_t)bodyStartLen + fileSize + (size_t)bodyEndLen;
+
     // Send HTTP headers
     client.printf("POST %s HTTP/1.1\r\n", WPASEC_UPLOAD_PATH);
     client.printf("Host: %s\r\n", WPASEC_HOST);
@@ -384,11 +384,9 @@ bool WPASec::uploadSingleCapture(const char* filepath, const char* bssid) {
     client.printf("Content-Type: multipart/form-data; boundary=%s\r\n", boundary);
     client.printf("Content-Length: %u\r\n", (unsigned int)contentLength);
     client.print("Connection: close\r\n\r\n");
-    
-    // Send multipart body
-    client.printf("--%s\r\n", boundary);
-    client.printf("%s\r\n", disposition);
-    client.print("Content-Type: application/octet-stream\r\n\r\n");
+
+    // Send multipart body start
+    client.print(bodyStart);
     
     // Stream file in chunks (heap-safe)
     char chunk[256];
@@ -405,7 +403,7 @@ bool WPASec::uploadSingleCapture(const char* filepath, const char* bssid) {
     capFile.close();
     
     // End multipart
-    client.printf("\r\n--%s--\r\n", boundary);
+    client.print(bodyEnd);
     
     // Read response (just check status code)
     unsigned long timeout = millis() + 10000;
