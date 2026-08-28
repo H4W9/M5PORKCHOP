@@ -9,6 +9,8 @@
 #include <NimBLEDevice.h>  // For BLE deinit during heap conditioning
 #include "heap_health.h"
 #include "rtc_ds3231.h"
+#include "timezones.h"
+#include "config.h"
 #include "heap_policy.h"
 #include "heap_gates.h"
 
@@ -166,8 +168,12 @@ bool ensureTimeSynced(uint32_t timeoutMs, bool force) {
         return true;
     }
 
-    // Start SNTP
+    // Start SNTP. configTime() sets the system clock in UTC — but it ALSO
+    // rewrites the TZ env (to UTC here, from the 0,0 offsets) and calls tzset(),
+    // which would clobber the user's timezone. Re-apply it so localtime_r() keeps
+    // showing local (DST-aware) time after an NTP sync.
     configTime(0, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
+    Timezones::apply(Config::gps().timezoneIndex);
 
     uint32_t start = millis();
     while (millis() - start < timeoutMs) {
