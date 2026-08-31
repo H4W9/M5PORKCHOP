@@ -779,10 +779,10 @@ bool Config::loadPersonality() {
     personalityConfig.brightness = doc["brightness"] | 80;
     personalityConfig.dimLevel = doc["dimLevel"] | 20;
     personalityConfig.dimTimeout = doc["dimTimeout"] | 30;
-    personalityConfig.themeIndex = doc["themeIndex"] | 0;
-    uint8_t g0Action = doc["g0Action"] | static_cast<uint8_t>(G0Action::SCREEN_TOGGLE);
+    personalityConfig.themeIndex = doc["themeIndex"] | 15;  // default: Realistic
+    uint8_t g0Action = doc["g0Action"] | static_cast<uint8_t>(G0Action::IDLE);
     if (g0Action >= G0_ACTION_COUNT) {
-        g0Action = static_cast<uint8_t>(G0Action::SCREEN_TOGGLE);
+        g0Action = static_cast<uint8_t>(G0Action::IDLE);
     }
     personalityConfig.g0Action = static_cast<G0Action>(g0Action);
     uint8_t bootMode = doc["bootMode"] | static_cast<uint8_t>(BootMode::IDLE);
@@ -868,7 +868,8 @@ bool Config::createDefaultPersonality() {
     personalityConfig.aggression = 0.3f;
     personalityConfig.patience = 0.5f;
     personalityConfig.soundEnabled = true;
-    personalityConfig.g0Action = G0Action::SCREEN_TOGGLE;
+    personalityConfig.themeIndex = 15;              // Realistic
+    personalityConfig.g0Action = G0Action::IDLE;
     personalityConfig.bootMode = BootMode::IDLE;
     return true;
 }

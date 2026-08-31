@@ -135,8 +135,8 @@ struct PersonalityConfig {
     uint8_t brightness = 80;            // Display brightness 0-100%
     uint8_t dimLevel = 40;              // Dimmed brightness 0-100% (0 = off) — stays visible, not black
     uint16_t dimTimeout = 30;           // Seconds before dimming (0 = never)
-    uint8_t themeIndex = 0;             // Color theme (0-14, see THEMES array)
-    G0Action g0Action = G0Action::SCREEN_TOGGLE;
+    uint8_t themeIndex = 15;            // Default: Realistic (REALISTIC_THEME_INDEX in display.h; 0-14 are the mono themes)
+    G0Action g0Action = G0Action::IDLE;
     BootMode bootMode = BootMode::IDLE;
 };
 
