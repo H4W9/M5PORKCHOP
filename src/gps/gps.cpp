@@ -399,23 +399,34 @@ void GPS::getTimeString(char* out, size_t len) {
         snprintf(out, len, "--:--");
         return;
     }
+    bool haveGpsDateTime = false;
+    time_t utc = 0;
     if (xSemaphoreTake(mutex, 10 / portTICK_PERIOD_MS)) {
         if (gps->time.isValid() && gps->date.isValid() && gps->date.year() >= 2024) {
-            // GPS gives UTC. Build a UTC epoch, then let localtime_r() apply the
+            // GPS gives UTC. Build a UTC epoch so localtime_r() can apply the
             // user's (DST-aware) zone — the date is required so DST resolves.
-            time_t utc = TimeUtil::utcEpoch(gps->date.year(), gps->date.month(),
-                                            gps->date.day(), gps->time.hour(),
-                                            gps->time.minute(), gps->time.second());
-            struct tm local;
-            localtime_r(&utc, &local);
-            Display::formatClock(out, len, local.tm_hour, local.tm_min);
-        } else {
-            snprintf(out, len, "--:--");
+            utc = TimeUtil::utcEpoch(gps->date.year(), gps->date.month(),
+                                     gps->date.day(), gps->time.hour(),
+                                     gps->time.minute(), gps->time.second());
+            haveGpsDateTime = true;
         }
         xSemaphoreGive(mutex);
     } else {
         snprintf(out, len, "ERR");
+        return;
     }
+
+    // GPS date can lag its time/position fix. Rather than show "--:--" while the
+    // date validates, fall back to the system clock (kept in UTC by the RTC seed
+    // and GPS/NTP/PigSync syncs). Only show "--:--" when we truly have no time.
+    if (!haveGpsDateTime) {
+        time_t sys = time(nullptr);
+        if (sys < 1600000000) { snprintf(out, len, "--:--"); return; }
+        utc = sys;
+    }
+    struct tm local;
+    localtime_r(&utc, &local);
+    Display::formatClock(out, len, local.tm_hour, local.tm_min);
 }
 
 uint32_t GPS::getFixCount() {
