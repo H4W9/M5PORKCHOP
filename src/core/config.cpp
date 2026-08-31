@@ -338,15 +338,17 @@ bool Config::init() {
 
     // Retry with progressive SPI speeds for reliability
     sdAvailable = false;
-    // 25 MHz is unreliable on the Pancake's shared TFT/SD bus (first CMD0
-    // fails, then it recovers at 20 MHz) — start at 20 MHz so it mounts on the
-    // first attempt with no error noise.
+    // The Pancake's shared TFT/SD bus is unreliable at high SPI clocks: many
+    // cards fail the first CMD0 at 20-25 MHz (Card Failed / f_mount(3) noise in
+    // the log) and only recover on a lower-speed retry. Start at 10 MHz so it
+    // mounts on the FIRST attempt with no error noise; 10 MHz is plenty for
+    // config + captures. Faster cards lose nothing meaningful.
     const int maxRetries = 5;
     const uint32_t speeds[] = {
-        20000000, // 20 MHz
         10000000, // 10 MHz
         8000000,  // 8 MHz
         4000000,  // 4 MHz
+        2000000,  // 2 MHz
         1000000   // 1 MHz
     };
 
@@ -480,15 +482,16 @@ bool Config::reinitSD() {
     // Re-init SD SPI bus explicitly
     ensureSdSpiReady();
 
-    // Retry with progressive SPI speeds
+    // Retry with progressive SPI speeds. Start at 10 MHz (same reasoning as the
+    // boot init) so the re-mount is quiet — high clocks fail first CMD0 on the
+    // shared TFT/SD bus and only add error noise before recovering.
     sdAvailable = false;
-    const int maxRetries = 6;
+    const int maxRetries = 5;
     const uint32_t speeds[] = {
-        25000000,
-        20000000,
         10000000,
         8000000,
         4000000,
+        2000000,
         1000000
     };
 
